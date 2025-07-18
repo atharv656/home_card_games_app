@@ -1,0 +1,349 @@
+/* App.css - Additional styling for the card game app */
+
+.App {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0f766e 0%, #134e4a 100%);
+}
+
+/* Enhanced animations */
+@keyframes cardDeal {
+  0% {
+    transform: scale(0) rotate(180deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.1) rotate(90deg);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes cardFlip {
+  0% {
+    transform: rotateY(0deg);
+  }
+  50% {
+    transform: rotateY(90deg);
+  }
+  100% {
+    transform: rotateY(0deg);
+  }
+}
+
+@keyframes cardHover {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    transform: translateY(-5px) scale(1.02);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* Enhanced card styling */
+.card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}
+
+.card:hover {
+  animation: cardHover 0.3s ease-out forwards;
+}
+
+.card.selected {
+  transform: translateY(-10px) scale(1.05);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3), 0 0 20px rgba(251, 191, 36, 0.5);
+}
+
+.card.dealing {
+  animation: cardDeal 0.8s ease-out forwards;
+}
+
+.card.flipping {
+  animation: cardFlip 0.6s ease-in-out forwards;
+}
+
+/* Game table enhancements */
+.game-table {
+  background: 
+    radial-gradient(ellipse at center, rgba(6, 95, 70, 0.8) 0%, rgba(6, 78, 59, 0.9) 100%),
+    repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.02),
+      rgba(255, 255, 255, 0.02) 1px,
+      transparent 1px,
+      transparent 4px
+    );
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.game-table::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 20px,
+      rgba(255, 255, 255, 0.01) 20px,
+      rgba(255, 255, 255, 0.01) 21px
+    );
+  pointer-events: none;
+}
+
+/* Player areas */
+.player-area {
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 20px;
+  min-height: 140px;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.player-area::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(45deg, transparent 49%, rgba(255, 255, 255, 0.05) 50%, transparent 51%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.player-area.active::before {
+  opacity: 1;
+}
+
+.player-area.active {
+  border-color: #fbbf24;
+  box-shadow: 
+    0 0 30px rgba(251, 191, 36, 0.2),
+    inset 0 0 30px rgba(251, 191, 36, 0.1);
+  animation: pulse 2s infinite;
+}
+
+.player-area.can-drop {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+}
+
+/* Button enhancements */
+.btn {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.btn:hover::before {
+  left: 100%;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+/* Loading animations */
+.loading-spinner {
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-top: 3px solid #ffffff;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  animation: spin 1s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 30px rgba(251, 191, 36, 0.2), inset 0 0 30px rgba(251, 191, 36, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(251, 191, 36, 0.4), inset 0 0 40px rgba(251, 191, 36, 0.2);
+  }
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+  .card {
+    width: 60px;
+    height: 84px;
+  }
+  
+  .game-table {
+    padding: 12px;
+  }
+  
+  .player-area {
+    padding: 12px;
+    min-height: 100px;
+  }
+}
+
+/* Connection status indicator */
+.connection-status {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 1000;
+  transition: all 0.3s ease;
+}
+
+.connection-status.connected {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.connection-status.disconnected {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* Toast notifications */
+.toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-weight: 500;
+  z-index: 1001;
+  animation: slideIn 0.3s ease-out;
+}
+
+.toast.success {
+  background: rgba(16, 185, 129, 0.9);
+  color: white;
+}
+
+.toast.error {
+  background: rgba(239, 68, 68, 0.9);
+  color: white;
+}
+
+.toast.info {
+  background: rgba(59, 130, 246, 0.9);
+  color: white;
+}
+
+/* Enhanced backdrop blur */
+.backdrop-blur-md {
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* Improved glass effect */
+.glass-effect {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+/* Focus styles for accessibility */
+.btn:focus,
+input:focus,
+button:focus {
+  outline: 2px solid rgba(251, 191, 36, 0.5);
+  outline-offset: 2px;
+}
+
+/* Smooth page transitions */
+.page-enter {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: all 0.3s ease-out;
+}
+
+.page-exit {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.page-exit-active {
+  opacity: 0;
+  transform: translateY(-20px);
+  transition: all 0.3s ease-in;
+} 

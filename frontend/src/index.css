@@ -1,0 +1,411 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --card-width: 80px;
+  --card-height: 112px;
+  --card-border-radius: 8px;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: linear-gradient(135deg, #0f766e 0%, #134e4a 100%);
+  min-height: 100vh;
+}
+
+/* Card styles */
+.card {
+  width: var(--card-width);
+  height: var(--card-height);
+  border-radius: var(--card-border-radius);
+  position: relative;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+.card.dragging {
+  opacity: 0.5;
+  transform: rotate(5deg);
+}
+
+.card.face-down {
+  background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+}
+
+.card.face-up {
+  background: white;
+  border: 2px solid #374151;
+}
+
+.card.hearts, .card.diamonds {
+  color: #dc2626;
+}
+
+.card.clubs, .card.spades {
+  color: #1f2937;
+}
+
+/* War-specific card animations */
+.card.war-reveal {
+  animation: warReveal 0.8s ease-out forwards;
+}
+
+.card.war-winner {
+  animation: warWinner 1s ease-out forwards;
+  z-index: 10;
+}
+
+.card.war-loser {
+  animation: warLoser 1s ease-out forwards;
+  z-index: 5;
+}
+
+.card.war-battle {
+  animation: warBattle 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes warReveal {
+  0% {
+    transform: scale(0.8) rotateY(180deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.1) rotateY(90deg);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1) rotateY(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes warWinner {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  }
+  50% {
+    transform: scale(1.2);
+    box-shadow: 0 8px 25px rgba(251, 191, 36, 0.6);
+  }
+  100% {
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(251, 191, 36, 0.4);
+  }
+}
+
+@keyframes warLoser {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(0.8);
+    opacity: 0.4;
+  }
+}
+
+@keyframes warBattle {
+  0% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  }
+  100% {
+    transform: translateY(-5px) scale(1.02);
+    box-shadow: 0 8px 15px rgba(239, 68, 68, 0.3);
+  }
+}
+
+/* War battle effects */
+.war-battlefield {
+  position: relative;
+  background: 
+    radial-gradient(ellipse at center, rgba(185, 28, 28, 0.1) 0%, rgba(153, 27, 27, 0.05) 100%),
+    radial-gradient(ellipse at center, rgba(6, 95, 70, 0.8) 0%, rgba(6, 78, 59, 0.9) 100%);
+  border: 3px solid rgba(239, 68, 68, 0.3);
+  box-shadow: 
+    inset 0 0 50px rgba(239, 68, 68, 0.1),
+    0 0 30px rgba(239, 68, 68, 0.2);
+}
+
+.war-battlefield::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    repeating-linear-gradient(
+      45deg,
+      rgba(239, 68, 68, 0.05),
+      rgba(239, 68, 68, 0.05) 2px,
+      transparent 2px,
+      transparent 6px
+    );
+  pointer-events: none;
+}
+
+.war-vs-text {
+  animation: warVsPulse 1s ease-in-out infinite alternate;
+  text-shadow: 0 0 20px rgba(239, 68, 68, 0.5);
+}
+
+@keyframes warVsPulse {
+  0% {
+    transform: scale(1);
+    color: #ffffff;
+  }
+  100% {
+    transform: scale(1.1);
+    color: #fbbf24;
+  }
+}
+
+.war-pile {
+  position: relative;
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  border: 2px solid #fbbf24;
+  box-shadow: 
+    0 0 20px rgba(239, 68, 68, 0.4),
+    inset 0 0 20px rgba(0, 0, 0, 0.3);
+  animation: warPilePulse 2s ease-in-out infinite;
+}
+
+@keyframes warPilePulse {
+  0%, 100% {
+    box-shadow: 
+      0 0 20px rgba(239, 68, 68, 0.4),
+      inset 0 0 20px rgba(0, 0, 0, 0.3);
+  }
+  50% {
+    box-shadow: 
+      0 0 30px rgba(239, 68, 68, 0.6),
+      inset 0 0 30px rgba(0, 0, 0, 0.4);
+  }
+}
+
+.war-announcement {
+  animation: warAnnouncement 0.8s ease-out forwards;
+}
+
+@keyframes warAnnouncement {
+  0% {
+    transform: scale(0.5) rotateZ(-10deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2) rotateZ(5deg);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1) rotateZ(0deg);
+    opacity: 1;
+  }
+}
+
+/* Game table styles */
+.game-table {
+  background: radial-gradient(ellipse at center, #065f46 0%, #064e3b 100%);
+  border-radius: 50px;
+  padding: 20px;
+  box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.3);
+}
+
+.player-area {
+  border: 2px dashed rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  padding: 16px;
+  min-height: 120px;
+  transition: all 0.3s ease;
+}
+
+.player-area.active {
+  border-color: #fbbf24;
+  box-shadow: 0 0 20px rgba(251, 191, 36, 0.3);
+}
+
+.player-area.can-drop {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+/* Button styles */
+.btn {
+  @apply px-4 py-2 rounded-lg font-medium transition-all duration-200;
+}
+
+.btn-primary {
+  @apply bg-blue-600 hover:bg-blue-700 text-white;
+}
+
+.btn-secondary {
+  @apply bg-gray-600 hover:bg-gray-700 text-white;
+}
+
+.btn-success {
+  @apply bg-green-600 hover:bg-green-700 text-white;
+}
+
+.btn-danger {
+  @apply bg-red-600 hover:bg-red-700 text-white;
+}
+
+/* War-specific button effects */
+.btn-war {
+  @apply bg-red-600 hover:bg-red-700 text-white;
+  box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
+  border: 2px solid rgba(239, 68, 68, 0.5);
+}
+
+.btn-war:hover {
+  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
+  transform: translateY(-2px);
+}
+
+.btn-war:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 10px rgba(239, 68, 68, 0.5);
+}
+
+/* Animation classes */
+.card-deal {
+  animation: dealCard 0.5s ease-out forwards;
+}
+
+@keyframes dealCard {
+  from {
+    transform: scale(0) rotate(180deg);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.slide-up {
+  animation: slideUp 0.5s ease-out forwards;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Loading spinner */
+.loading-spinner {
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-top: 3px solid #ffffff;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  animation: spin 1s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Player name highlights */
+.player-name-you {
+  background: linear-gradient(45deg, #10b981, #059669);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: bold;
+}
+
+.player-name-opponent {
+  background: linear-gradient(45deg, #ef4444, #dc2626);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: bold;
+}
+
+/* Card count animations */
+.card-count {
+  transition: all 0.3s ease;
+}
+
+.card-count.decreasing {
+  animation: countDecrease 0.3s ease-out;
+}
+
+.card-count.increasing {
+  animation: countIncrease 0.3s ease-out;
+}
+
+@keyframes countDecrease {
+  0% { transform: scale(1); color: inherit; }
+  50% { transform: scale(0.8); color: #ef4444; }
+  100% { transform: scale(1); color: inherit; }
+}
+
+@keyframes countIncrease {
+  0% { transform: scale(1); color: inherit; }
+  50% { transform: scale(1.2); color: #10b981; }
+  100% { transform: scale(1); color: inherit; }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  :root {
+    --card-width: 60px;
+    --card-height: 84px;
+  }
+  
+  .game-table {
+    padding: 12px;
+  }
+  
+  .player-area {
+    padding: 8px;
+    min-height: 80px;
+  }
+  
+  .war-battlefield {
+    border-width: 2px;
+    border-radius: 20px;
+  }
+}
+
+/* Z-index layers */
+.z-cards { z-index: 10; }
+.z-ui { z-index: 20; }
+.z-modals { z-index: 30; }
+.z-notifications { z-index: 40; } 
