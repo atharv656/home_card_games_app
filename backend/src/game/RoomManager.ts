@@ -69,12 +69,20 @@ export class RoomManager {
 
     room.players = room.players.filter(p => p.id !== playerId)
     
-    // Remove empty rooms
+    // Keep empty rooms for 5 minutes instead of immediately deleting
     if (room.players.length === 0) {
-      this.rooms.delete(roomId)
-    } else {
-      this.rooms.set(roomId, room)
+      console.log(`⏰ Room ${roomId} is now empty, will be cleaned up in 5 minutes`)
+      // Schedule room cleanup after 5 minutes of being empty
+      setTimeout(() => {
+        const currentRoom = this.rooms.get(roomId)
+        if (currentRoom && currentRoom.players.length === 0) {
+          console.log(`🗑️ Cleaning up empty room ${roomId} after timeout`)
+          this.rooms.delete(roomId)
+        }
+      }, 5 * 60 * 1000) // 5 minutes
     }
+    
+    this.rooms.set(roomId, room)
   }
 
   async setPlayerReady(roomId: string, playerId: string, isReady: boolean): Promise<GameRoom> {
@@ -120,12 +128,20 @@ export class RoomManager {
       if (playerIndex !== -1) {
         room.players.splice(playerIndex, 1)
         
-        // Remove empty rooms
+        // Keep empty rooms for 5 minutes instead of immediately deleting
         if (room.players.length === 0) {
-          this.rooms.delete(roomId)
-        } else {
-          this.rooms.set(roomId, room)
+          console.log(`⏰ Room ${roomId} is now empty after player disconnect, will be cleaned up in 5 minutes`)
+          // Schedule room cleanup after 5 minutes of being empty
+          setTimeout(() => {
+            const currentRoom = this.rooms.get(roomId)
+            if (currentRoom && currentRoom.players.length === 0) {
+              console.log(`🗑️ Cleaning up empty room ${roomId} after timeout`)
+              this.rooms.delete(roomId)
+            }
+          }, 5 * 60 * 1000) // 5 minutes
         }
+        
+        this.rooms.set(roomId, room)
       }
     }
   }
