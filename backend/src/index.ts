@@ -44,6 +44,7 @@ app.get('/api/health', (req, res) => {
 // Get all rooms
 app.get('/api/rooms', (req, res) => {
   const rooms = roomManager.getAllRooms()
+  console.log(`API: /api/rooms called - returning ${rooms.length} rooms:`, rooms.map(r => ({ id: r.id, name: r.name, players: r.playerCount })))
   res.json(rooms)
 })
 
@@ -96,14 +97,16 @@ io.on('connection', (socket) => {
   // Create room
   socket.on('room:create', async (roomConfig: Partial<GameRoom> & { playerName?: string }) => {
     try {
-      console.log(`Creating room for socket ${socket.id} with name: ${roomConfig.playerName}`)
+      console.log(`🏠 Creating room for socket ${socket.id} with config:`, { playerName: roomConfig.playerName, gameType: roomConfig.gameType, maxPlayers: roomConfig.maxPlayers })
       const room = await roomManager.createRoom(roomConfig)
-      console.log('Empty room created:', { id: room.id, playersCount: room.players.length })
+      console.log('✅ Empty room created:', { id: room.id, name: room.name, playersCount: room.players.length })
       
       // Add creator as a player to the room
       const playerName = roomConfig.playerName || 'Player'
       const updatedRoom = await roomManager.joinRoom(room.id, socket.id, playerName)
-      console.log('Room after adding creator:', { id: updatedRoom.id, playersCount: updatedRoom.players.length, players: updatedRoom.players.map(p => ({ id: p.id, name: p.name })) })
+      const totalRooms = roomManager.getAllRooms().length
+      console.log('👤 Creator added to room:', { id: updatedRoom.id, name: updatedRoom.name, playersCount: updatedRoom.players.length, players: updatedRoom.players.map(p => ({ id: p.id, name: p.name })) })
+      console.log(`📊 Total rooms in system: ${totalRooms}`)
       
       // Join the socket to the room BEFORE emitting events
       socket.join(room.id)
@@ -177,10 +180,14 @@ io.on('connection', (socket) => {
 
   // Handle disconnection
   socket.on('disconnect', () => {
-    console.log(`User disconnected: ${socket.id}`)
+    const roomsBefore = roomManager.getAllRooms().length
+    console.log(`🚪 User disconnected: ${socket.id}`)
     
     // Remove player from all rooms
     roomManager.removePlayerFromAllRooms(socket.id)
+    
+    const roomsAfter = roomManager.getAllRooms().length
+    console.log(`📊 Rooms before disconnect: ${roomsBefore}, after: ${roomsAfter}`)
     
     // Notify other players in affected rooms
     // This is a simplified version - in production, you'd want to track which rooms the player was in
