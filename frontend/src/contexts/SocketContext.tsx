@@ -28,9 +28,14 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const [connectionError, setConnectionError] = useState<string | null>(null)
 
   useEffect(() => {
-    const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:5001'
+    // Auto-detect the server URL based on environment
+    const serverUrl = import.meta.env.VITE_SERVER_URL || 
+                     (window.location.hostname === 'localhost' ? 'http://localhost:5001' : window.location.origin)
+    
+    console.log('🔌 Connecting Socket.IO to:', serverUrl)
+    
     const newSocket = io(serverUrl, {
-      transports: ['websocket'],
+      transports: ['polling', 'websocket'], // Polling first for reliability
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 5,
