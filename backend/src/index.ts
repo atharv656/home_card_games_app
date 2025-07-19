@@ -64,7 +64,10 @@ app.post('/api/test-create-room', async (req, res) => {
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-  console.log(`🔌 User connected: ${socket.id} at ${new Date().toISOString()}`)
+  console.log(`🔌🔌🔌 USER CONNECTED: ${socket.id} at ${new Date().toISOString()} 🔌🔌🔌`)
+  console.log(`🔌 Socket.IO connection established successfully!`)
+  const currentConnections = io.engine.clientsCount
+  console.log(`📊 Total active connections: ${currentConnections}`)
 
   // Join room
   socket.on('room:join', async (roomId: string, playerName: string) => {
@@ -110,6 +113,11 @@ io.on('connection', (socket) => {
 
   // Create room
   socket.on('room:create', async (roomConfig: Partial<GameRoom> & { playerName?: string }) => {
+    console.log(`🚨🚨🚨 ROOM:CREATE EVENT RECEIVED 🚨🚨🚨`)
+    console.log(`Socket ID: ${socket.id}`)
+    console.log(`Timestamp: ${new Date().toISOString()}`)
+    console.log(`Config:`, JSON.stringify(roomConfig, null, 2))
+    
     try {
       console.log(`🏠 Creating room for socket ${socket.id} with config:`, { playerName: roomConfig.playerName, gameType: roomConfig.gameType, maxPlayers: roomConfig.maxPlayers })
       const room = await roomManager.createRoom(roomConfig)
@@ -132,8 +140,19 @@ io.on('connection', (socket) => {
       // Send updated room info to all players (in case others are already in the room)
       io.to(room.id).emit('room:updated', updatedRoom)
       
+      // Final verification
+      const finalRoomCheck = roomManager.getRoom(room.id)
+      const allRoomsAfterCreation = roomManager.getAllRooms()
+      console.log(`🔍 Final room verification:`, { 
+        roomExists: !!finalRoomCheck, 
+        roomId: room.id, 
+        totalRooms: allRoomsAfterCreation.length,
+        allRoomIds: allRoomsAfterCreation.map(r => r.id)
+      })
+      console.log(`🚨🚨🚨 ROOM CREATION COMPLETE 🚨🚨🚨`)
+      
     } catch (error) {
-      console.error('Error in room creation:', error)
+      console.error('❌❌❌ ERROR IN ROOM CREATION:', error)
       socket.emit('error', `Failed to create room: ${error}`)
     }
   })
@@ -195,13 +214,17 @@ io.on('connection', (socket) => {
   // Handle disconnection
   socket.on('disconnect', () => {
     const roomsBefore = roomManager.getAllRooms().length
-    console.log(`🚪 User disconnected: ${socket.id}`)
+    const roomsBeforeDetails = roomManager.getAllRooms().map(r => ({ id: r.id, name: r.name, players: r.playerCount }))
+    console.log(`🚪🚪🚪 User disconnected: ${socket.id} 🚪🚪🚪`)
+    console.log(`📊 Rooms before disconnect: ${roomsBefore}`, roomsBeforeDetails)
     
     // Remove player from all rooms
     roomManager.removePlayerFromAllRooms(socket.id)
     
     const roomsAfter = roomManager.getAllRooms().length
-    console.log(`📊 Rooms before disconnect: ${roomsBefore}, after: ${roomsAfter}`)
+    const roomsAfterDetails = roomManager.getAllRooms().map(r => ({ id: r.id, name: r.name, players: r.playerCount }))
+    console.log(`📊 Rooms after disconnect: ${roomsAfter}`, roomsAfterDetails)
+    console.log(`🚪🚪🚪 DISCONNECT PROCESSING COMPLETE 🚪🚪🚪`)
     
     // Notify other players in affected rooms
     // This is a simplified version - in production, you'd want to track which rooms the player was in
