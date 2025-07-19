@@ -26,6 +26,8 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
     methods: ['GET', 'POST'],
     credentials: true
   },
+  transports: ['polling', 'websocket'],
+  allowEIO3: true
 })
 
 // Middleware
@@ -53,6 +55,16 @@ const allowedOrigins = [
 console.log('🔌 Socket.IO CORS origins:', allowedOrigins)
 console.log('🌍 NODE_ENV:', process.env.NODE_ENV)
 console.log('🌍 FRONTEND_URL:', process.env.FRONTEND_URL || 'not set')
+console.log('🚀 Socket.IO server configured with transports: polling, websocket')
+
+// Add connection attempt logging
+io.engine.on('initial_headers', (headers, req) => {
+  console.log('🔍 Socket.IO initial headers from:', req.headers.origin || 'no origin header')
+})
+
+io.engine.on('connection_error', (err) => {
+  console.log('❌ Socket.IO connection error:', err.req?.headers?.origin, err.message, err.description)
+})
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -71,13 +83,29 @@ app.get('/api/rooms', (req, res) => {
 // Test endpoint to create a room via HTTP (for debugging)
 app.post('/api/test-create-room', async (req, res) => {
   try {
-    console.log('🧪 Test room creation via HTTP endpoint')
-    const room = await roomManager.createRoom({ name: 'Test Room', gameType: 'poker' })
+    console.log('🧪 HTTP Test: Creating room without Socket.IO')
+    const room = await roomManager.createRoom({ 
+      name: 'HTTP Test Room', 
+      gameType: 'poker',
+      maxPlayers: 4
+    })
+    
+    // Simulate adding a player
+    const testPlayerId = 'http-test-player'
+    const updatedRoom = await roomManager.joinRoom(room.id, testPlayerId, 'HTTP Test Player')
+    
     const allRooms = roomManager.getAllRooms()
-    console.log(`✅ Test room created: ${room.id}, total rooms: ${allRooms.length}`)
-    res.json({ success: true, room, totalRooms: allRooms.length, allRooms })
+    console.log(`✅ HTTP Test room created: ${room.id} with ${updatedRoom.players.length} players`)
+    console.log(`📊 Total rooms after HTTP creation: ${allRooms.length}`)
+    
+    res.json({ 
+      success: true, 
+      room: updatedRoom, 
+      totalRooms: allRooms.length, 
+      allRooms: allRooms.map(r => ({ id: r.id, name: r.name, players: r.playerCount }))
+    })
   } catch (error) {
-    console.error('❌ Test room creation failed:', error)
+    console.error('❌ HTTP Test room creation failed:', error)
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' })
   }
 })
