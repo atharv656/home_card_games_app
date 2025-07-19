@@ -18,8 +18,13 @@ const app = express()
 const server = createServer(app)
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: [
+      'http://localhost:3000',
+      'https://home-card-games-app.onrender.com',
+      ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : [])
+    ],
     methods: ['GET', 'POST'],
+    credentials: true
   },
 })
 
@@ -38,6 +43,16 @@ const gameManager = new GameManager(roomManager)
 
 console.log('🏗️ RoomManager created:', !!roomManager)
 console.log('🏗️ GameManager created:', !!gameManager)
+
+// Log Socket.IO configuration
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://home-card-games-app.onrender.com',
+  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : [])
+]
+console.log('🔌 Socket.IO CORS origins:', allowedOrigins)
+console.log('🌍 NODE_ENV:', process.env.NODE_ENV)
+console.log('🌍 FRONTEND_URL:', process.env.FRONTEND_URL || 'not set')
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
