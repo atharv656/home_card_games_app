@@ -48,9 +48,23 @@ app.get('/api/rooms', (req, res) => {
   res.json(rooms)
 })
 
+// Test endpoint to create a room via HTTP (for debugging)
+app.post('/api/test-create-room', async (req, res) => {
+  try {
+    console.log('🧪 Test room creation via HTTP endpoint')
+    const room = await roomManager.createRoom({ name: 'Test Room', gameType: 'poker' })
+    const allRooms = roomManager.getAllRooms()
+    console.log(`✅ Test room created: ${room.id}, total rooms: ${allRooms.length}`)
+    res.json({ success: true, room, totalRooms: allRooms.length, allRooms })
+  } catch (error) {
+    console.error('❌ Test room creation failed:', error)
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' })
+  }
+})
+
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-  console.log(`User connected: ${socket.id}`)
+  console.log(`🔌 User connected: ${socket.id} at ${new Date().toISOString()}`)
 
   // Join room
   socket.on('room:join', async (roomId: string, playerName: string) => {
