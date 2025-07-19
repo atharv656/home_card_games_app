@@ -36,6 +36,9 @@ if (process.env.NODE_ENV === 'production') {
 const roomManager = new RoomManager()
 const gameManager = new GameManager(roomManager)
 
+console.log('🏗️ RoomManager created:', !!roomManager)
+console.log('🏗️ GameManager created:', !!gameManager)
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
@@ -43,6 +46,8 @@ app.get('/api/health', (req, res) => {
 
 // Get all rooms
 app.get('/api/rooms', (req, res) => {
+  console.log('🌍 HTTP /api/rooms endpoint called')
+  console.log('🔍 RoomManager instance check:', !!roomManager)
   const rooms = roomManager.getAllRooms()
   console.log(`API: /api/rooms called - returning ${rooms.length} rooms:`, rooms.map(r => ({ id: r.id, name: r.name, players: r.playerCount })))
   res.json(rooms)
@@ -59,6 +64,20 @@ app.post('/api/test-create-room', async (req, res) => {
   } catch (error) {
     console.error('❌ Test room creation failed:', error)
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' })
+  }
+})
+
+// Check specific room by ID
+app.get('/api/rooms/:roomId', (req, res) => {
+  const roomId = req.params.roomId
+  console.log(`🔍 Checking for room: ${roomId}`)
+  const room = roomManager.getRoom(roomId)
+  const allRooms = roomManager.getAllRooms()
+  console.log(`📊 Room exists: ${!!room}, Total rooms: ${allRooms.length}`)
+  if (room) {
+    res.json({ exists: true, room })
+  } else {
+    res.json({ exists: false, roomId, totalRooms: allRooms.length, allRooms })
   }
 })
 
