@@ -671,11 +671,11 @@ const GameRoom: React.FC = () => {
               <div className="text-white text-sm font-semibold mb-1">Game Status</div>
               <div className="text-teal-200 text-xs mb-1">
                 Players: {currentRoom?.players?.length || 0}/{currentRoom?.maxPlayers || 4}
-              </div>
+        </div>
               {isGameStarted && (
                 <div className="text-yellow-400 text-xs">
                   🎮 Game in Progress
-                </div>
+      </div>
               )}
               
               {!isGameStarted && (
@@ -741,9 +741,9 @@ const GameRoom: React.FC = () => {
                         )}
                         {player.isActive && (
                           <div className="text-yellow-400 text-xs">🎯</div>
-                        )}
-                      </div>
-                    </div>
+                )}
+              </div>
+            </div>
                   </div>
                 ))}
               </div>
