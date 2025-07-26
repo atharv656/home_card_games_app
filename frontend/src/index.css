@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 :root {
-  --card-width: 80px;
-  --card-height: 112px;
+  --card-width: 135px;
+  --card-height: 190px;
   --card-border-radius: 8px;
 }
 
@@ -385,8 +385,8 @@ body {
 /* Responsive design */
 @media (max-width: 768px) {
   :root {
-    --card-width: 60px;
-    --card-height: 84px;
+    --card-width: 101px;
+    --card-height: 142px;
   }
   
   .game-table {

@@ -297,149 +297,136 @@ const GameRoom: React.FC = () => {
     const opponent = getOpponentPlayer()
 
     return (
-      <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 mb-4">
-        <div className="game-table rounded-xl p-4">
-          <div className="text-center mb-4">
-            <h3 className="text-xl font-bold text-white mb-1">⚡ Speed Game</h3>
-            <div className="text-teal-200 text-sm">
-              {speedData.gamePhase === 'waiting_for_ready' && 'Waiting for players to be ready...'}
-              {speedData.gamePhase === 'playing' && 'Race to play all your cards!'}
-              {speedData.gamePhase === 'ended' && `Game Over! Winner: ${speedData.winner === currentPlayer?.id ? 'You' : 'Opponent'}`}
-            </div>
-          </div>
-
-          {/* Game Board */}
-          <div className="flex justify-center items-center mb-4">
-            <div className="grid grid-cols-4 gap-3">
-              {/* Left Stock Pile */}
-              <div className="text-center">
-                <div className="text-white font-semibold mb-1 text-sm">Stock</div>
-                <div className="w-16 h-20 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
-                  {speedData.leftStockPile.length}
+      <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 mb-2">
+        <div className="flex gap-4">
+          {/* Main Game Board */}
+          <div className="flex-1">
+            {/* Game Board */}
+            <div className="flex justify-center items-center mb-4">
+              <div className="grid grid-cols-4 gap-8">
+                {/* Left Stock Pile */}
+                <div className="text-center">
+                  <div className="text-white font-semibold mb-1 text-sm">Stock</div>
+                  <div className="w-24 h-28 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-lg">
+                    {speedData.leftStockPile.length}
+                  </div>
                 </div>
-              </div>
 
-              {/* Left Play Pile */}
-              <div className="text-center">
-                <div className="text-white font-semibold mb-1 text-sm">Play</div>
-                <div className="w-16 h-20 bg-green-600 rounded-lg flex items-center justify-center">
-                  {speedData.leftPlayPile.length > 0 ? (
-                    <div className="scale-75">
-                      <Card
-                        card={speedData.leftPlayPile[speedData.leftPlayPile.length - 1]}
-                        isDraggable={false}
-                        isPlayable={false}
-                      />
-                    </div>
-                  ) : (
-                    <div className="text-white font-bold text-xs">Empty</div>
-                  )}
+                {/* Left Play Pile */}
+                <div className="text-center">
+                  <div className="text-white font-semibold mb-1 text-sm">Play</div>
+                  <div className="w-24 h-28  rounded-lg flex items-center justify-center">
+                    {speedData.leftPlayPile.length > 0 ? (
+                      <div className="scale-[0.65]">
+                        <Card
+                          card={speedData.leftPlayPile[speedData.leftPlayPile.length - 1]}
+                          isDraggable={false}
+                          isPlayable={false}
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-white font-bold text-xs">Empty</div>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {/* Right Play Pile */}
-              <div className="text-center">
-                <div className="text-white font-semibold mb-1 text-sm">Play</div>
-                <div className="w-16 h-20 bg-green-600 rounded-lg flex items-center justify-center">
-                  {speedData.rightPlayPile.length > 0 ? (
-                    <div className="scale-75">
-                      <Card
-                        card={speedData.rightPlayPile[speedData.rightPlayPile.length - 1]}
-                        isDraggable={false}
-                        isPlayable={false}
-                      />
-                    </div>
-                  ) : (
-                    <div className="text-white font-bold text-xs">Empty</div>
-                  )}
+                {/* Right Play Pile */}
+                <div className="text-center">
+                  <div className="text-white font-semibold mb-1 text-sm">Play</div>
+                  <div className="w-24 h-28 rounded-lg flex items-center justify-center">
+                    {speedData.rightPlayPile.length > 0 ? (
+                      <div className="scale-[0.65]">
+                        <Card
+                          card={speedData.rightPlayPile[speedData.rightPlayPile.length - 1]}
+                          isDraggable={false}
+                          isPlayable={false}
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-white font-bold text-xs">Empty</div>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {/* Right Stock Pile */}
-              <div className="text-center">
-                <div className="text-white font-semibold mb-1 text-sm">Stock</div>
-                <div className="w-16 h-20 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
-                  {speedData.rightStockPile.length}
+                {/* Right Stock Pile */}
+                <div className="text-center">
+                  <div className="text-white font-semibold mb-1 text-sm">Stock</div>
+                  <div className="w-24 h-28 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-lg">
+                    {speedData.rightStockPile.length}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Player Information */}
-          <div className="grid grid-cols-2 gap-8 mb-4">
-            <div className="text-center">
-              <div className="text-white font-semibold text-sm">{myPlayer?.name} (You)</div>
-              <div className="text-teal-200 text-xs">
-                Hand: {currentPlayer?.hand?.length || 0} • Deck: {speedData.playerDecks[currentPlayer?.id || '']?.length || 0}
+            {/* Player Information */}
+            <div className="grid grid-cols-2 gap-8 mb-4">
+              <div className="text-center">
+                <div className="text-white font-semibold text-sm">{myPlayer?.name} (You)</div>
+                <div className="text-teal-200 text-xs">
+                  Hand: {currentPlayer?.hand?.length || 0} • Deck: {speedData.playerDecks[currentPlayer?.id || '']?.length || 0}
+                </div>
               </div>
-            </div>
-            <div className="text-center">
-              <div className="text-white font-semibold text-sm">{opponent?.name}</div>
-              <div className="text-teal-200 text-xs">
-                Hand: {opponent?.hand?.length || 0} • Deck: {speedData.playerDecks[opponent?.id || '']?.length || 0}
+              <div className="text-center">
+                <div className="text-white font-semibold text-sm">{opponent?.name}</div>
+                <div className="text-teal-200 text-xs">
+                  Hand: {opponent?.hand?.length || 0} • Deck: {speedData.playerDecks[opponent?.id || '']?.length || 0}
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Game Controls */}
-          <div className="text-center">
+          {/* Game Controls - Right Side */}
+          <div className="w-48 flex flex-col justify-center">
             {speedData.gamePhase === 'waiting_for_ready' && (
               <button
                 onClick={handleSpeedReadyToStart}
-                className="px-6 py-2 rounded-lg font-semibold bg-green-600 hover:bg-green-700 text-white"
+                className="px-4 py-3 rounded-lg font-semibold bg-green-600 hover:bg-green-700 text-white text-sm mb-4"
               >
                 ⚡ Start Speed Game
               </button>
             )}
 
             {speedData.gamePhase === 'playing' && (
-              <div>
-                <div className="text-white font-semibold mb-2 text-sm">
+              <div className="space-y-3">
+                <div className="text-white font-semibold text-sm text-center">
                   Click cards in your hand to play them!
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleFlipNewCards}
-                    className="px-4 py-2 rounded-lg font-semibold bg-blue-600 hover:bg-blue-700 text-white text-sm"
-                  >
-                    🔄 Flip New Cards {speedData.flipRequests?.length > 0 && `(${speedData.flipRequests.length}/2)`}
-                  </button>
-                  <button
-                    onClick={handleRestartGame}
-                    className="px-4 py-2 rounded-lg font-semibold bg-orange-600 hover:bg-orange-700 text-white text-sm"
-                  >
-                    🔄 Restart Game {speedData.restartRequests?.length > 0 && `(${speedData.restartRequests.length}/2)`}
-                  </button>
-                </div>
+                <button
+                  onClick={handleFlipNewCards}
+                  className="w-full px-3 py-2 rounded-lg font-semibold bg-blue-600 hover:bg-blue-700 text-white text-sm"
+                >
+                  🔄 Flip New Cards {speedData.flipRequests?.length > 0 && `(${speedData.flipRequests.length}/2)`}
+                </button>
+                <button
+                  onClick={handleRestartGame}
+                  className="w-full px-3 py-2 rounded-lg font-semibold bg-orange-600 hover:bg-orange-700 text-white text-sm"
+                >
+                  🔄 Restart Game {speedData.restartRequests?.length > 0 && `(${speedData.restartRequests.length}/2)`}
+                </button>
                 {speedData.flipRequests?.length > 0 && speedData.flipRequests.length < 2 && (
-                  <div className="text-teal-200 text-xs mt-1">
-                    Waiting for other player to agree to flip...
+                  <div className="text-teal-200 text-xs text-center">
+                    Waiting for other player...
                   </div>
                 )}
                 {speedData.restartRequests?.length > 0 && speedData.restartRequests.length < 2 && (
-                  <div className="text-orange-200 text-xs mt-1">
-                    Waiting for other player to agree to restart...
+                  <div className="text-orange-200 text-xs text-center">
+                    Waiting for other player...
                   </div>
                 )}
               </div>
             )}
 
             {speedData.gamePhase === 'ended' && (
-              <div className="text-center">
-                <div className="text-xl font-bold text-white mb-4">
+              <div className="text-center space-y-3">
+                <div className="text-lg font-bold text-white">
                   {speedData.winner === currentPlayer?.id ? "🏆 You Won!" : "😞 You Lost!"}
                 </div>
                 <button
                   onClick={handleRestartGame}
-                  className="px-6 py-3 rounded-lg font-semibold bg-green-600 hover:bg-green-700 text-white"
+                  className="w-full px-3 py-2 rounded-lg font-semibold bg-green-600 hover:bg-green-700 text-white text-sm"
                 >
-                  🎮 Play Again {speedData.restartRequests?.length > 0 && `(${speedData.restartRequests.length}/2)`}
+                  🔄 Play Again
                 </button>
-                {speedData.restartRequests?.length > 0 && speedData.restartRequests.length < 2 && (
-                  <div className="text-teal-200 text-xs mt-2">
-                    Waiting for other player to agree...
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -457,9 +444,9 @@ const GameRoom: React.FC = () => {
     const opponent = getOpponentPlayer()
 
     return (
-      <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 mb-6">
+      <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 mb-3">
         <div className="game-table rounded-xl p-8">
-          <div className="text-center mb-6">
+          <div className="text-center mb-4">
             <h3 className="text-2xl font-bold text-white mb-2">War Battle</h3>
             <div className="text-teal-200">
               Round: {gameState.round} • Wars: {warData.warCount || 0}
@@ -467,7 +454,7 @@ const GameRoom: React.FC = () => {
           </div>
 
           {/* Battle Area */}
-          <div className="flex justify-center items-center gap-8 mb-8">
+          <div className="flex justify-center items-center gap-12 mb-8">
             {/* Opponent's Battle Card */}
             <div className="text-center">
               <div className="text-white font-semibold mb-2">{opponent?.name}</div>
@@ -648,39 +635,41 @@ const GameRoom: React.FC = () => {
 
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-teal-800 to-teal-900 p-3">
+    <div className="min-h-screen bg-gradient-to-br from-teal-800 to-teal-900 px-3 py-1">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="flex justify-between items-center mb-3">
-          <div>
-            <h1 className="text-xl font-bold text-white">
-              🎮 {currentRoom?.name || 'Game Room'}
-            </h1>
-            <p className="text-teal-200 text-xs">
-              {currentRoom?.gameType || 'Unknown Game'} • Room ID: {roomId}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleLeaveRoom}
-              className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
-            >
-              🚪 Leave
-            </button>
-            <div className="text-xs text-teal-200">
-              {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
-            </div>
-          </div>
+        <div className="mb-1">
+          <h1 className="text-xl font-bold text-white">
+            🎮 {currentRoom?.name || 'Game Room'}
+          </h1>
+          <p className="text-teal-200 text-xs">
+            {currentRoom?.gameType || 'Unknown Game'} • Room ID: {roomId}
+          </p>
         </div>
 
         {/* Main Layout - Sidebar + Game Area */}
-        <div className="flex gap-4">
+        <div className="flex gap-3">
           {/* Left Sidebar - Players & Game Status */}
-          <div className="w-64 space-y-3">
+          <div className="w-60 space-y-2">
+            {/* Connection & Leave Controls */}
+            <div className="bg-white/10 backdrop-blur-md rounded-xl p-2">
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={handleLeaveRoom}
+                  className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-semibold"
+                >
+                  🚪 Leave Room
+                </button>
+                <div className="text-xs text-center">
+                  {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
+                </div>
+              </div>
+            </div>
+
             {/* Game Status */}
-            <div className="bg-white/10 backdrop-blur-md rounded-xl p-3">
-              <div className="text-white text-sm font-semibold mb-2">Game Status</div>
-              <div className="text-teal-200 text-xs mb-2">
+            <div className="bg-white/10 backdrop-blur-md rounded-xl p-2">
+              <div className="text-white text-sm font-semibold mb-1">Game Status</div>
+              <div className="text-teal-200 text-xs mb-1">
                 Players: {currentRoom?.players?.length || 0}/{currentRoom?.maxPlayers || 4}
               </div>
               {isGameStarted && (
@@ -690,7 +679,7 @@ const GameRoom: React.FC = () => {
               )}
               
               {!isGameStarted && (
-                <div className="space-y-2 mt-3">
+                <div className="space-y-2 mt-2">
                   <button
                     onClick={handleReady}
                     className={`w-full px-3 py-2 rounded text-sm font-semibold ${
@@ -725,13 +714,13 @@ const GameRoom: React.FC = () => {
             </div>
 
             {/* Players List */}
-            <div className="bg-white/10 backdrop-blur-md rounded-xl p-3">
-              <h3 className="text-white font-semibold mb-2 text-sm">Players</h3>
-              <div className="space-y-2">
+            <div className="bg-white/10 backdrop-blur-md rounded-xl p-2">
+              <h3 className="text-white font-semibold mb-1 text-sm">Players</h3>
+              <div className="space-y-1">
                 {currentRoom?.players?.map((player) => (
                   <div 
                     key={player.id}
-                    className={`p-2 rounded text-sm ${
+                    className={`p-1.5 rounded text-sm ${
                       player.isActive 
                         ? 'bg-green-500/20 border border-green-500' 
                         : 'bg-white/20'
@@ -772,9 +761,9 @@ const GameRoom: React.FC = () => {
 
         {/* Generic Game Board (for non-War and non-Speed games) */}
         {!isWarGame && !isSpeedGame && isGameStarted && (
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 mb-6">
+          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 mb-3">
             <div className="game-table rounded-xl p-8">
-              <div className="text-center mb-6">
+              <div className="text-center mb-4">
                 <h3 className="text-2xl font-bold text-white mb-2">Game Board</h3>
                 <div className="text-teal-200">
                   Turn: {gameState?.turn || 1} • Round: {gameState?.round || 1}
@@ -835,7 +824,7 @@ const GameRoom: React.FC = () => {
                 </div>
               </div>
             </div>
-            <div className="flex flex-wrap gap-1 justify-center">
+            <div className="flex flex-wrap gap-3 justify-center">
               {currentPlayer.hand.map((card) => (
                 <div key={card.id} className="relative">
                   <div

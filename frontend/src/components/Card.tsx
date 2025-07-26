@@ -83,27 +83,27 @@ const Card: React.FC<CardProps> = ({
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
     >
       {card.faceUp ? (
-        <div className="w-full h-full flex flex-col justify-between p-1">
+        <div className="w-full h-full flex flex-col justify-between p-3">
           {/* Top left corner */}
-          <div className={`text-xs font-bold ${getSuitColor(card.suit)}`}>
+          <div className={`text-2xl font-bold ${getSuitColor(card.suit)}`}>
             {showRank && card.rank}
             {showSuit && (
-              <div className="text-sm leading-none">
+              <div className="text-3xl leading-none">
                 {getSuitSymbol(card.suit)}
               </div>
             )}
           </div>
           
           {/* Center symbol */}
-          <div className={`text-2xl font-bold text-center ${getSuitColor(card.suit)}`}>
+          <div className={`text-5xl font-bold text-center ${getSuitColor(card.suit)}`}>
             {showSuit && getSuitSymbol(card.suit)}
           </div>
           
           {/* Bottom right corner (upside down) */}
-          <div className={`text-xs font-bold ${getSuitColor(card.suit)} transform rotate-180 self-end`}>
+          <div className={`text-2xl font-bold ${getSuitColor(card.suit)} transform rotate-180 self-end`}>
             {showRank && card.rank}
             {showSuit && (
-              <div className="text-sm leading-none">
+              <div className="text-3xl leading-none">
                 {getSuitSymbol(card.suit)}
               </div>
             )}
@@ -111,7 +111,7 @@ const Card: React.FC<CardProps> = ({
         </div>
       ) : (
         <div className="w-full h-full flex items-center justify-center">
-          <div className="text-white text-xl font-bold opacity-30">
+          <div className="text-white text-4xl font-bold opacity-30">
             🂠
           </div>
         </div>

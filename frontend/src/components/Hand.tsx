@@ -29,14 +29,14 @@ const Hand: React.FC<HandProps> = ({
   const getCardStyle = (index: number, total: number) => {
     if (layout === 'fan') {
       const angle = total > 1 ? (index / (total - 1) - 0.5) * 30 : 0
-      const translateX = total > 1 ? (index / (total - 1) - 0.5) * 20 : 0
+      const translateX = total > 1 ? (index / (total - 1) - 0.5) * 30 : 0
       return {
         transform: `rotate(${angle}deg) translateX(${translateX}px)`,
         zIndex: index,
       }
     } else if (layout === 'linear') {
       return {
-        transform: `translateX(${index * -15}px)`,
+        transform: `translateX(${index * -25}px)`,
         zIndex: index,
       }
     } else {
