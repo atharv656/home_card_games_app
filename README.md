@@ -215,6 +215,73 @@ The architecture supports multiple card games:
 - **Spades** - Partnership card game
 - **Go Fish** - Matching card game
 - **War** - Simple comparison game
+- **Speed** - Two-player shedder
+- **304** - Four-player bidding and tricks (see section above)
+- **Speed** - Two-player real-time shedder (see `GameManager` / `GameRoom`)
+- **304** - Four-player Sri Lankan-style 304 (rules below)
+
+### 304 (four players, 32-card deck: 7–A)
+
+These are the rules implemented in this repo (adjust in `GameManager.ts` if your house rules differ).
+
+**Deck and deal**  
+Only ranks 7, 8, 9, 10, J, Q, K, A (32 cards). Each player receives 8 cards.
+
+**Bidding**  
+Players bid a number in turn. Each bid must be **higher than the previous bid**, or the player may **pass**. The maximum bid is **304**. After three players have passed, the remaining player wins the bid and becomes the **bid winner** (declarer).
+
+**Trump and partner**  
+The bid winner chooses **trump suit** and nominates a **partner card** (rank + suit). Whoever holds that card is the hidden partner until partnerships are decided (see below).
+
+**Legal play**  
+You **must follow the suit that was led** if you have any card in that suit. If you are **void** in the led suit, you may play **any** card.
+
+**Winning a trick**  
+If any trump was played, the highest **trump** wins (by strength order below). Otherwise the highest card of the **led suit** wins.
+
+**Card strength (high → low)** — same order used for trick comparison and for point values on cards:
+
+| Rank | Trick strength | Points |
+|------|----------------|--------|
+| J | Highest | 30 |
+| 9 | | 20 |
+| A | | 11 |
+| 10 | | 10 |
+| K | | 3 |
+| Q | | 2 |
+| 8 | | 0 |
+| 7 | Lowest | 0 |
+
+If two cards tie on the values above, **suit order** breaks ties: **spades → hearts → diamonds → clubs** (higher wins).
+
+**Calling partner**  
+When the **bid winner leads** a trick, they may **call partner** for that trick (declared when they play their lead card). The player who holds the **partner card** must play it on that trick **if legally able** (follow-suit rules still apply).
+
+**Partnership outcome (2v2 vs 1v3)**  
+On a trick where partner was called, after the trick is resolved:
+
+- If **either** the bid winner **or** the partner-card holder **wins** the trick → they become **partners** (**2v2** vs the other two).
+- Otherwise it stays **1v3** (bid winner alone vs the other three).
+
+If the bid winner never calls partner during the hand, **partnership stays unresolved** and scoring treats the bid winner as a solo side for the whole hand.
+
+**Making the contract**  
+The bid winner’s side tries to take enough **card points** in tricks to reach their **bid**. A running **contract adjustment** modifies how many points they need:
+
+- **Marriages**: Only players on the team that **won the trick** may declare (any member of that team, before the next trick’s lead is played). You must still hold **both** K and Q of the suit in hand. If **you** played the K or Q of that suit **on that same trick**, you have **broken** that marriage for scoring—you cannot declare it. **Trump** K+Q = **40** points adjustment; **non-trump** K+Q = **20** each. If the **bid winner’s side** declares marriages, the points they need **decrease** by that amount. If the **defending side** declares, the points the bidder needs **increase** by that amount. Multiple marriages can be declared together.
+- **Last trick**: The side that wins the **eighth (last) trick** applies a **10** point adjustment in the same direction (easier for the bid winner’s side if they take it, harder if the defenders take it).
+
+At the end of the hand, the bid winner’s side **makes** the contract if their **total trick card points** ≥ **bid amount + contract adjustment** (where a negative adjustment means they need fewer trick points, and a positive adjustment means they need more).
+
+After the **eighth trick**, the app applies the last-trick bonus to the contract adjustment, then the **last trick winner** may declare any marriages still allowed, and must press **End hand** in the UI to finalize scoring (so marriages after the last trick are still counted).
+
+**Session scoring (same room, multiple hands)**  
+When a hand ends, **session points** update on the room (shown in the sidebar):
+
+- If the **contract is made**: the **bid winner** gains session points equal to their **bid**; in **2v2**, the **partner** gains **half the bid** (integer half, rounded down).
+- If the **contract is set**: the **defending** players **split half the bid** evenly among them (remainder distributed one point at a time in table order).
+
+Use **Play again** so all players agree to start the next hand; session totals persist until you leave the room (or the room is cleared).
 
 ## 🛠️ Development
 

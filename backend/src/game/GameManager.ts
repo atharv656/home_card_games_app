@@ -1,5 +1,18 @@
 import { v4 as uuidv4 } from 'uuid'
-import type { GameState, GameAction, Player, Card, Suit, Rank, WarGameData, SpeedGameData, SpeedAction } from '../../../shared/types'
+import type {
+  GameState,
+  GameAction,
+  Player,
+  Card,
+  Suit,
+  Rank,
+  GameRoom,
+  WarGameData,
+  SpeedGameData,
+  SpeedAction,
+  ThreeOhFourGameData,
+  ThreeOhFourAction,
+} from '../../../shared/types'
 import { RoomManager } from './RoomManager'
 
 export class GameManager {
@@ -31,6 +44,8 @@ export class GameManager {
       gameState = this.initializeWarGame(roomId, room.players, shuffledDeck)
     } else if (room.gameType === 'speed') {
       gameState = this.initializeSpeedGame(roomId, room.players, shuffledDeck)
+    } else if (room.gameType === '304') {
+      gameState = this.initializeThreeOhFourGame(roomId, room.players, shuffledDeck)
     } else {
       gameState = this.initializeGenericGame(roomId, room.players, shuffledDeck, room.gameType)
     }
@@ -131,7 +146,8 @@ export class GameManager {
       lastPlayedBy: null,
       winner: null,
       flipRequests: [],
-      restartRequests: []
+      restartRequests: [],
+      readyToStartPlayerIds: []
     }
 
     console.log(`Speed game initialized: Each player has 5 cards in hand, 10 in deck, stock piles have 6 cards each`)
@@ -147,6 +163,84 @@ export class GameManager {
         roomId,
         gameType: 'speed',
         ...speedGameData
+      }
+    }
+  }
+
+  private initializeThreeOhFourGame(roomId: string, players: Player[], deck: Card[]): GameState {
+    if (players.length !== 4) {
+      throw new Error('304 requires exactly 4 players')
+    }
+
+    // Create 304 deck - only cards 7 and higher (32 cards total)
+    const threeOhFourDeck = deck.filter(card => 
+      ['7', '8', '9', '10', 'J', 'Q', 'K', 'A'].includes(card.rank)
+    )
+    
+    if (threeOhFourDeck.length !== 32) {
+      throw new Error('304 deck should have exactly 32 cards')
+    }
+
+    // Deal 8 cards to each player
+    for (let i = 0; i < players.length; i++) {
+      players[i].hand = threeOhFourDeck.slice(i * 8, (i + 1) * 8)
+      players[i].hand.forEach(card => card.faceUp = true) // Players can see their own cards
+      players[i].isActive = false // Will be set during bidding
+      players[i].score = 0
+    }
+
+    // Set up initial teams: bidder vs everyone else (1 vs 3)
+    const threeOhFourGameData: ThreeOhFourGameData = {
+      currentTrick: [],
+      trumpSuit: null,
+      bidAmount: 0,
+      bidWinner: null,
+      teamScores: { team1: 0, team2: 0 },
+      playerTeams: {},
+      gamePhase: 'bidding',
+      currentBidder: players[0].id,
+      bids: {},
+      passedPlayers: [],
+      tricksWon: { team1: 0, team2: 0 },
+      currentTrickWinner: null,
+      roundScores: { team1: 0, team2: 0 },
+      leadPlayer: null,
+      partnerCard: null,
+      partnerHolderId: null,
+      partnershipResolved: false,
+      isTwoVsTwo: null,
+      partnerCallThisTrick: false,
+      contractTargetDelta: 0,
+      bidderTrickPoints: 0,
+      defenseTrickPoints: 0,
+      tricksCompleted: 0,
+      trickHistory: [],
+      flipRequests: [],
+      restartRequests: [],
+      lastPlayedCard: null,
+      lastPlayedBy: null,
+      pendingMarriagePlayerIds: [],
+      marriageBrokenSuitsThisRound: {},
+      marriageLog: [],
+      awaitingFinalDeclarations: false
+    }
+
+    // Set first player as active for bidding
+    players[0].isActive = true
+
+    console.log(`304 game initialized: 4 players, 8 cards each, bidding starts with ${players[0].name}`)
+
+    return {
+      currentPlayer: players[0].id,
+      phase: 'bidding',
+      deck: [], // No remaining deck after dealing
+      discardPile: [],
+      turn: 1,
+      round: 1,
+      gameData: {
+        roomId,
+        gameType: '304',
+        ...threeOhFourGameData
       }
     }
   }
@@ -187,6 +281,8 @@ export class GameManager {
       return this.processWarAction(roomId, action, gameState, room)
     } else if (room.gameType === 'speed') {
       return this.processSpeedAction(roomId, action, gameState, room)
+    } else if (room.gameType === '304') {
+      return this.processThreeOhFourAction(roomId, action, gameState, room)
     } else {
       return this.processGenericAction(roomId, action, gameState, room)
     }
@@ -387,29 +483,60 @@ export class GameManager {
 
   private handleSpeedReadyToStart(gameState: GameState, room: any, playerId: string): GameState {
     const speedData = gameState.gameData as SpeedGameData
-    
-    // Check if both players are ready (simple implementation - could be improved)
-    if (speedData.gamePhase === 'waiting_for_ready') {
-      // Flip cards from stock piles to play piles
+
+    if (speedData.gamePhase !== 'waiting_for_ready') {
+      gameState.gameData = speedData
+      this.gameStates.set(gameState.gameData.roomId, gameState)
+      return gameState
+    }
+
+    if (!speedData.readyToStartPlayerIds.includes(playerId)) {
+      speedData.readyToStartPlayerIds.push(playerId)
+    }
+
+    const allReady =
+      room.players.length >= 2 &&
+      room.players.every((p: Player) => speedData.readyToStartPlayerIds.includes(p.id))
+
+    if (allReady) {
       if (speedData.leftStockPile.length > 0) {
         const leftCard = speedData.leftStockPile.pop()!
         leftCard.faceUp = true
         speedData.leftPlayPile.push(leftCard)
       }
-      
+
       if (speedData.rightStockPile.length > 0) {
         const rightCard = speedData.rightStockPile.pop()!
         rightCard.faceUp = true
         speedData.rightPlayPile.push(rightCard)
       }
-      
+
       speedData.gamePhase = 'playing'
+      speedData.readyToStartPlayerIds = []
       console.log('Speed game started! Cards flipped to play piles')
+    } else {
+      console.log(`Speed ready: ${speedData.readyToStartPlayerIds.length}/${room.players.length} players`)
     }
 
     gameState.gameData = speedData
     this.gameStates.set(gameState.gameData.roomId, gameState)
     return gameState
+  }
+
+  private replenishSpeedCenterPilesIfBothEmpty(speedData: SpeedGameData): void {
+    if (speedData.leftPlayPile.length > 0 || speedData.rightPlayPile.length > 0) {
+      return
+    }
+    if (speedData.leftStockPile.length > 0) {
+      const leftCard = speedData.leftStockPile.pop()!
+      leftCard.faceUp = true
+      speedData.leftPlayPile.push(leftCard)
+    }
+    if (speedData.rightStockPile.length > 0) {
+      const rightCard = speedData.rightStockPile.pop()!
+      rightCard.faceUp = true
+      speedData.rightPlayPile.push(rightCard)
+    }
   }
 
   private handleSpeedPlayCard(gameState: GameState, room: any, playerId: string, cardId: string, targetPile: 'left' | 'right'): GameState {
@@ -419,7 +546,8 @@ export class GameManager {
     }
 
     const speedData = gameState.gameData as SpeedGameData
-    
+    this.replenishSpeedCenterPilesIfBothEmpty(speedData)
+
     // Find the card in player's hand
     const cardIndex = player.hand.findIndex((card: Card) => card.id === cardId)
     if (cardIndex === -1) {
@@ -543,7 +671,8 @@ export class GameManager {
       const deck = this.createDeck()
       const shuffledDeck = this.shuffleDeck(deck)
       const newGameState = this.initializeSpeedGame(gameState.gameData.roomId, room.players, shuffledDeck)
-      
+      ;(newGameState.gameData as SpeedGameData).readyToStartPlayerIds = []
+
       // Update the room with the reset player states
       this.roomManager.updateRoom(gameState.gameData.roomId, room)
       
@@ -553,6 +682,572 @@ export class GameManager {
       console.log(`Player ${playerId} requested to restart game. Waiting for other player...`)
       
       gameState.gameData = speedData
+      this.gameStates.set(gameState.gameData.roomId, gameState)
+      return gameState
+    }
+  }
+
+  private async processThreeOhFourAction(roomId: string, action: GameAction, gameState: GameState, room: any): Promise<GameState> {
+    const player = room.players.find((p: Player) => p.id === action.playerId)
+    if (!player) {
+      throw new Error('Player not found')
+    }
+
+    const threeOhFourData = gameState.gameData as ThreeOhFourGameData
+
+    switch (action.type) {
+      case 'bid':
+        return this.handleThreeOhFourBid(gameState, room, action.playerId, action.data.amount as number)
+      case 'pass_bid':
+        return this.handleThreeOhFourPassBid(gameState, room, action.playerId)
+      case 'select_trump':
+        return this.handleThreeOhFourSelectTrump(gameState, room, action.playerId, action.data.trumpSuit as string)
+      case 'select_partner':
+        return this.handleThreeOhFourSelectPartner(gameState, room, action.playerId, action.data.partnerCard)
+      case 'play_card': {
+        const cardId = action.data.cardId as string
+        const callPartner = Boolean(action.data.callPartner)
+        return this.handleThreeOhFourPlayCard(gameState, room, action.playerId, cardId, callPartner)
+      }
+      case 'pass_turn':
+        if (threeOhFourData.gamePhase !== 'bidding') {
+          throw new Error('pass_turn is only valid during bidding (use pass_bid)')
+        }
+        return this.handleThreeOhFourPassBid(gameState, room, action.playerId)
+      case 'declare_marriages':
+        return this.handleThreeOhFourDeclareMarriages(
+          gameState,
+          room,
+          action.playerId,
+          (action.data.suits || action.data.marriageSuits) as Suit[]
+        )
+      case 'finish_304_hand':
+        return this.handleThreeOhFourFinishHand(gameState, room, action.playerId)
+      case 'restart_game':
+        return this.handleThreeOhFourRestartGame(gameState, room, action.playerId)
+      default:
+        throw new Error(`Unknown 304 action type: ${action.type}`)
+    }
+  }
+
+  private handleThreeOhFourBid(gameState: GameState, room: any, playerId: string, amount: number): GameState {
+    const threeOhFourData = gameState.gameData as ThreeOhFourGameData
+    
+    // Only current bidder can bid
+    if (threeOhFourData.currentBidder !== playerId) {
+      throw new Error('Not your turn to bid')
+    }
+
+    if (amount < 0 || amount > 304) {
+      throw new Error('Invalid bid amount (max 304)')
+    }
+
+    // Bid must be higher than current highest bid
+    if (amount <= threeOhFourData.bidAmount) {
+      throw new Error('Bid must be higher than current bid')
+    }
+
+    // Update bid amount and bid winner
+    threeOhFourData.bidAmount = amount
+    threeOhFourData.bids[playerId] = amount
+
+    // Move to next player for bidding (counter-clockwise), skipping passed players
+    let nextPlayerIndex = (room.players.findIndex((p: Player) => p.id === playerId) + 1) % room.players.length
+    let nextPlayer = room.players[nextPlayerIndex]
+    
+    // Skip players who have already passed
+    while (threeOhFourData.passedPlayers.includes(nextPlayer.id)) {
+      nextPlayerIndex = (nextPlayerIndex + 1) % room.players.length
+      nextPlayer = room.players[nextPlayerIndex]
+    }
+    
+    threeOhFourData.currentBidder = nextPlayer.id
+
+    console.log(`${playerId} bids ${amount}, next bidder: ${nextPlayer.name}`)
+
+    gameState.gameData = threeOhFourData
+    this.gameStates.set(gameState.gameData.roomId, gameState)
+    return gameState
+  }
+
+  private handleThreeOhFourSelectTrump(gameState: GameState, room: any, playerId: string, trumpSuit: string): GameState {
+    const threeOhFourData = gameState.gameData as ThreeOhFourGameData
+    
+    // Only the bid winner can select trump
+    if (threeOhFourData.bidWinner !== playerId) {
+      throw new Error('Only the bid winner can select trump')
+    }
+
+    // Validate trump suit
+    if (!['spades', 'hearts', 'diamonds', 'clubs'].includes(trumpSuit)) {
+      throw new Error('Invalid trump suit')
+    }
+
+    threeOhFourData.trumpSuit = trumpSuit as any
+    threeOhFourData.gamePhase = 'partner_selection'
+    
+    console.log(`${playerId} selected ${trumpSuit} as trump`)
+
+    gameState.gameData = threeOhFourData
+    this.gameStates.set(gameState.gameData.roomId, gameState)
+    return gameState
+  }
+
+  private handleThreeOhFourSelectPartner(gameState: GameState, room: any, playerId: string, partnerCardData: any): GameState {
+    const threeOhFourData = gameState.gameData as ThreeOhFourGameData
+    
+    // Only the bid winner can select partner
+    if (threeOhFourData.bidWinner !== playerId) {
+      throw new Error('Only the bid winner can select partner')
+    }
+
+    // Validate partner card data
+    if (!partnerCardData || !partnerCardData.suit || !partnerCardData.rank) {
+      throw new Error('Invalid partner card data')
+    }
+
+    // Create the partner card specification
+    const partnerCard: Card = {
+      id: `partner-${partnerCardData.suit}-${partnerCardData.rank}`,
+      suit: partnerCardData.suit,
+      rank: partnerCardData.rank,
+      faceUp: true
+    }
+
+    threeOhFourData.partnerCard = partnerCard
+    threeOhFourData.partnerHolderId = null
+    for (const p of room.players) {
+      if (p.hand.some((c: Card) => c.rank === partnerCard.rank && c.suit === partnerCard.suit)) {
+        threeOhFourData.partnerHolderId = p.id
+        break
+      }
+    }
+
+    threeOhFourData.partnershipResolved = false
+    threeOhFourData.isTwoVsTwo = null
+    threeOhFourData.partnerCallThisTrick = false
+    threeOhFourData.contractTargetDelta = 0
+    threeOhFourData.bidderTrickPoints = 0
+    threeOhFourData.defenseTrickPoints = 0
+    threeOhFourData.tricksCompleted = 0
+    threeOhFourData.pendingMarriagePlayerIds = []
+    threeOhFourData.marriageBrokenSuitsThisRound = {}
+    threeOhFourData.marriageLog = []
+    threeOhFourData.awaitingFinalDeclarations = false
+    threeOhFourData.currentTrick = []
+    threeOhFourData.trickHistory = []
+
+    threeOhFourData.gamePhase = 'playing'
+    threeOhFourData.leadPlayer = threeOhFourData.bidWinner
+    gameState.currentPlayer = threeOhFourData.bidWinner
+    gameState.phase = 'playing'
+
+    console.log(
+      `${playerId} selected partner card: ${partnerCard.rank} of ${partnerCard.suit}. Holder: ${threeOhFourData.partnerHolderId}. ${playerId} leads first trick.`
+    )
+
+    gameState.gameData = threeOhFourData
+    this.gameStates.set(gameState.gameData.roomId, gameState)
+    return gameState
+  }
+
+  private isPlayerOnBidderSide(playerId: string, d: ThreeOhFourGameData): boolean {
+    if (!d.bidWinner) return false
+    if (!d.partnershipResolved) {
+      return playerId === d.bidWinner
+    }
+    if (d.isTwoVsTwo && d.partnerHolderId) {
+      return playerId === d.bidWinner || playerId === d.partnerHolderId
+    }
+    return playerId === d.bidWinner
+  }
+
+  /**
+   * Session scoring (same room, multiple hands):
+   * - Contract made: bid winner +bid; partner (2v2 only) +floor(bid/2).
+   * - Contract set: defending side shares floor(bid/2) evenly among all defenders.
+   */
+  private apply304SessionScores(room: GameRoom, d: ThreeOhFourGameData, made: boolean): { [playerId: string]: number } {
+    if (!room.sessionScores304) room.sessionScores304 = {}
+    const sc = room.sessionScores304
+    const bid = d.bidAmount
+    const awarded: { [playerId: string]: number } = {}
+    const bidderId = d.bidWinner
+    if (!bidderId || bid < 1) {
+      room.last304Hand = { made, bidAmount: bid, awarded: {} }
+      this.roomManager.updateRoom(room.id, room)
+      return {}
+    }
+
+    if (made) {
+      sc[bidderId] = (sc[bidderId] ?? 0) + bid
+      awarded[bidderId] = bid
+      if (d.isTwoVsTwo && d.partnerHolderId && d.partnerHolderId !== bidderId) {
+        const half = Math.floor(bid / 2)
+        if (half > 0) {
+          const pid = d.partnerHolderId
+          sc[pid] = (sc[pid] ?? 0) + half
+          awarded[pid] = half
+        }
+      }
+    } else {
+      const defenders = room.players.filter((p) => !this.isPlayerOnBidderSide(p.id, d))
+      const pool = Math.floor(bid / 2)
+      if (defenders.length > 0 && pool > 0) {
+        const base = Math.floor(pool / defenders.length)
+        let rem = pool - base * defenders.length
+        defenders.forEach((p, i) => {
+          const add = base + (i < rem ? 1 : 0)
+          if (add <= 0) return
+          sc[p.id] = (sc[p.id] ?? 0) + add
+          awarded[p.id] = add
+        })
+      }
+    }
+
+    room.last304Hand = { made, bidAmount: bid, awarded }
+    this.roomManager.updateRoom(room.id, room)
+    return awarded
+  }
+
+  private resolve304PartnershipFromCallTrick(
+    d: ThreeOhFourGameData,
+    room: any,
+    trickWinnerId: string
+  ): void {
+    const bidder = d.bidWinner!
+    const partner = d.partnerHolderId
+    const partnerWon = partner && trickWinnerId === partner
+    const bidderWon = trickWinnerId === bidder
+    if (bidderWon || partnerWon) {
+      d.isTwoVsTwo = true
+      const others = room.players.filter((p: Player) => p.id !== bidder && p.id !== partner)
+      d.playerTeams = {
+        [bidder]: 'team1',
+        [partner!]: 'team1',
+        [others[0].id]: 'team2',
+        [others[1].id]: 'team2'
+      }
+      console.log(`304: 2v2 — bidder and partner (${partner})`)
+    } else {
+      d.isTwoVsTwo = false
+      d.playerTeams = { [bidder]: 'team1' }
+      for (const p of room.players) {
+        if (p.id !== bidder) d.playerTeams[p.id] = 'team2'
+      }
+      console.log(`304: 1v3 — bidder alone`)
+    }
+    d.partnershipResolved = true
+  }
+
+  private handleThreeOhFourPlayCard(
+    gameState: GameState,
+    room: any,
+    playerId: string,
+    cardId: string,
+    callPartner: boolean
+  ): GameState {
+    const d = gameState.gameData as ThreeOhFourGameData
+
+    if (d.awaitingFinalDeclarations) {
+      throw new Error('Play is over — declare marriages if you wish, then end the hand')
+    }
+
+    if (gameState.currentPlayer !== playerId) {
+      throw new Error('Not your turn to play')
+    }
+
+    const player = room.players.find((p: Player) => p.id === playerId)
+    if (!player) {
+      throw new Error('Player not found')
+    }
+
+    const cardIndex = player.hand.findIndex((card: Card) => card.id === cardId)
+    if (cardIndex === -1) {
+      throw new Error('Card not found in player hand')
+    }
+
+    const playedCard = player.hand[cardIndex]
+
+    if (d.currentTrick.length === 0 && playerId === d.bidWinner && !d.partnershipResolved && callPartner) {
+      d.partnerCallThisTrick = true
+    }
+
+    if (!this.isLegalCardPlay304(playedCard, d.currentTrick, player.hand)) {
+      throw new Error('Illegal card play — follow the led suit when you can')
+    }
+
+    const pc = d.partnerCard
+    if (
+      d.partnerCallThisTrick &&
+      !d.partnershipResolved &&
+      pc &&
+      playerId === d.partnerHolderId
+    ) {
+      const hasPartner = player.hand.some((c: Card) => c.rank === pc.rank && c.suit === pc.suit)
+      if (hasPartner && this.canPlayPartnerCard(pc, d.currentTrick, player.hand)) {
+        const matchesPartner = playedCard.rank === pc.rank && playedCard.suit === pc.suit
+        if (!matchesPartner) {
+          throw new Error(`Partner was called — you must play the ${pc.rank} of ${pc.suit} when legal.`)
+        }
+      }
+    }
+
+    if (d.currentTrick.length === 0 && !d.awaitingFinalDeclarations) {
+      d.pendingMarriagePlayerIds = []
+      d.marriageBrokenSuitsThisRound = {}
+    }
+
+    const cardWithPlayer = { ...playedCard, playerId }
+    d.currentTrick.push(cardWithPlayer as Card)
+    player.hand.splice(cardIndex, 1)
+    player.score = player.hand.length
+
+    if (d.currentTrick.length < 4) {
+      const currentIndex = room.players.findIndex((p: Player) => p.id === playerId)
+      const nextIndex = (currentIndex + 1) % room.players.length
+      gameState.currentPlayer = room.players[nextIndex].id
+    } else {
+      const trump = d.trumpSuit
+      const trickWinnerId = this.determine304TrickWinner(d.currentTrick, trump)
+      d.currentTrickWinner = trickWinnerId
+
+      const callActive = d.partnerCallThisTrick
+      if (callActive && !d.partnershipResolved) {
+        this.resolve304PartnershipFromCallTrick(d, room, trickWinnerId)
+      }
+      d.partnerCallThisTrick = false
+
+      const trickPoints = d.currentTrick.reduce(
+        (total, card) => total + this.get304CardValue(card.rank),
+        0
+      )
+
+      if (this.isPlayerOnBidderSide(trickWinnerId, d)) {
+        d.bidderTrickPoints += trickPoints
+        d.tricksWon.team1++
+      } else {
+        d.defenseTrickPoints += trickPoints
+        d.tricksWon.team2++
+      }
+      d.roundScores.team1 = d.bidderTrickPoints
+      d.roundScores.team2 = d.defenseTrickPoints
+
+      const completedTrick = [...d.currentTrick]
+      d.marriageBrokenSuitsThisRound = {}
+      for (const c of completedTrick) {
+        const pid = (c as Card & { playerId?: string }).playerId
+        if (!pid || (c.rank !== 'K' && c.rank !== 'Q')) continue
+        if (!d.marriageBrokenSuitsThisRound[pid]) d.marriageBrokenSuitsThisRound[pid] = []
+        const suits = d.marriageBrokenSuitsThisRound[pid]
+        if (!suits.includes(c.suit)) suits.push(c.suit)
+      }
+
+      const winnerOnBidderSide = this.isPlayerOnBidderSide(trickWinnerId, d)
+      d.pendingMarriagePlayerIds = room.players
+        .filter((p: Player) => this.isPlayerOnBidderSide(p.id, d) === winnerOnBidderSide)
+        .map((p: Player) => p.id)
+
+      d.trickHistory.push(completedTrick)
+      d.currentTrick = []
+      d.tricksCompleted++
+
+      d.leadPlayer = trickWinnerId
+      gameState.currentPlayer = trickWinnerId
+
+      console.log(`Trick ${d.tricksCompleted} won by ${trickWinnerId} (${trickPoints} pts)`)
+
+      if (d.tricksCompleted >= 8) {
+        const bidderWonLast = this.isPlayerOnBidderSide(trickWinnerId, d)
+        if (bidderWonLast) {
+          d.contractTargetDelta -= 10
+        } else {
+          d.contractTargetDelta += 10
+        }
+        d.awaitingFinalDeclarations = true
+        const required = d.bidAmount + d.contractTargetDelta
+        console.log(
+          `304: 8 tricks done — last-trick bonus applied. Awaiting final declarations. Provisional need>=${required}`
+        )
+      }
+    }
+
+    d.lastPlayedCard = playedCard
+    d.lastPlayedBy = playerId
+
+    gameState.gameData = d
+    this.gameStates.set(gameState.gameData.roomId, gameState)
+    this.roomManager.updateRoom(gameState.gameData.roomId, room)
+    return gameState
+  }
+
+  private handleThreeOhFourDeclareMarriages(
+    gameState: GameState,
+    room: any,
+    playerId: string,
+    suits: Suit[]
+  ): GameState {
+    const d = gameState.gameData as ThreeOhFourGameData
+    if (d.gamePhase !== 'playing') {
+      throw new Error('Marriages only during play')
+    }
+    if (!d.pendingMarriagePlayerIds.includes(playerId)) {
+      throw new Error('Only a player on the team that won the last trick may declare marriages')
+    }
+    if (d.currentTrick.length > 0) {
+      throw new Error('Cannot declare marriages during a trick')
+    }
+    if (!suits?.length) {
+      throw new Error('No suits provided')
+    }
+
+    const player = room.players.find((p: Player) => p.id === playerId)
+    if (!player) throw new Error('Player not found')
+
+    const trump = d.trumpSuit
+    let totalValue = 0
+    const seen = new Set<Suit>()
+
+    for (const suit of suits) {
+      if (seen.has(suit)) {
+        throw new Error(`Duplicate suit in declaration: ${suit}`)
+      }
+      seen.add(suit)
+
+      const broken = d.marriageBrokenSuitsThisRound[playerId] || []
+      if (broken.includes(suit)) {
+        throw new Error(
+          `You played K or Q of ${suit} on that trick — the marriage for that suit is broken`
+        )
+      }
+
+      const hasK = player.hand.some((c: Card) => c.suit === suit && c.rank === 'K')
+      const hasQ = player.hand.some((c: Card) => c.suit === suit && c.rank === 'Q')
+      if (!hasK || !hasQ) {
+        throw new Error(`You need K and Q of ${suit} in hand to declare that marriage`)
+      }
+      const pts = suit === trump ? 40 : 20
+      totalValue += pts
+      d.marriageLog.push({ playerId, suit, points: pts })
+    }
+
+    const onBidderSide = this.isPlayerOnBidderSide(playerId, d)
+    if (onBidderSide) {
+      d.contractTargetDelta -= totalValue
+    } else {
+      d.contractTargetDelta += totalValue
+    }
+
+    gameState.gameData = d
+    this.gameStates.set(gameState.gameData.roomId, gameState)
+    return gameState
+  }
+
+  private handleThreeOhFourFinishHand(gameState: GameState, room: GameRoom, playerId: string): GameState {
+    const d = gameState.gameData as ThreeOhFourGameData
+    if (!d.awaitingFinalDeclarations) {
+      throw new Error('Hand is not waiting for final declarations')
+    }
+    if (!d.pendingMarriagePlayerIds.includes(playerId)) {
+      throw new Error('Only a player on the team that won the last trick may end the hand')
+    }
+    d.awaitingFinalDeclarations = false
+    d.pendingMarriagePlayerIds = []
+    d.marriageBrokenSuitsThisRound = {}
+    d.gamePhase = 'ended'
+    gameState.phase = 'ended'
+    const required = d.bidAmount + d.contractTargetDelta
+    const made = d.bidderTrickPoints >= required
+    this.apply304SessionScores(room, d, made)
+    console.log(`304 ended: bidder trick pts=${d.bidderTrickPoints}, need>=${required}, contract made=${made}`)
+    gameState.gameData = d
+    this.gameStates.set(gameState.gameData.roomId, gameState)
+    return gameState
+  }
+
+  private handleThreeOhFourPassBid(gameState: GameState, room: any, playerId: string): GameState {
+    const threeOhFourData = gameState.gameData as ThreeOhFourGameData
+    
+    // Only current bidder can pass
+    if (threeOhFourData.currentBidder !== playerId) {
+      throw new Error('Not your turn to pass')
+    }
+
+    // Add player to passedPlayers if not already there
+    if (!threeOhFourData.passedPlayers.includes(playerId)) {
+      threeOhFourData.passedPlayers.push(playerId)
+    }
+
+    // Check if 3 players have passed (leaving 1 winner)
+    if (threeOhFourData.passedPlayers.length >= 3) {
+      // Find the player who hasn't passed (the bid winner)
+      const bidWinner = room.players.find((p: Player) => !threeOhFourData.passedPlayers.includes(p.id))
+      if (bidWinner) {
+        threeOhFourData.bidWinner = bidWinner.id
+        threeOhFourData.currentBidder = null
+        threeOhFourData.gamePhase = 'trump_selection'
+        
+        // Set up teams: bidder (team1) vs everyone else (team2)
+        threeOhFourData.playerTeams = {}
+        for (const player of room.players) {
+          if (player.id === bidWinner.id) {
+            threeOhFourData.playerTeams[player.id] = 'team1' // Bidder
+          } else {
+            threeOhFourData.playerTeams[player.id] = 'team2' // Everyone else
+          }
+        }
+        
+        console.log(`${bidWinner.name} wins the bid with ${threeOhFourData.bidAmount}. Teams: ${bidWinner.name} vs everyone else`)
+      }
+    } else {
+      // Move to next player who hasn't passed
+      let nextPlayerIndex = (room.players.findIndex((p: Player) => p.id === playerId) + 1) % room.players.length
+      let nextPlayer = room.players[nextPlayerIndex]
+      
+      // Skip players who have already passed
+      while (threeOhFourData.passedPlayers.includes(nextPlayer.id)) {
+        nextPlayerIndex = (nextPlayerIndex + 1) % room.players.length
+        nextPlayer = room.players[nextPlayerIndex]
+      }
+      
+      threeOhFourData.currentBidder = nextPlayer.id
+      console.log(`${playerId} passes, next bidder: ${nextPlayer.name}`)
+    }
+
+    gameState.gameData = threeOhFourData
+    this.gameStates.set(gameState.gameData.roomId, gameState)
+    return gameState
+  }
+
+  private handleThreeOhFourRestartGame(gameState: GameState, room: any, playerId: string): GameState {
+    const threeOhFourData = gameState.gameData as ThreeOhFourGameData
+    
+    // Add this player's request to restart game (if not already requested)
+    if (!threeOhFourData.restartRequests.includes(playerId)) {
+      threeOhFourData.restartRequests.push(playerId)
+    }
+    
+    const need = Math.max(4, room.players.length)
+    if (threeOhFourData.restartRequests.length >= need) {
+      room.last304Hand = undefined
+      room.players.forEach((player: any) => {
+        player.isReady = false
+        player.isActive = false
+        player.score = 0
+      })
+
+      const deck = this.createDeck()
+      const shuffledDeck = this.shuffleDeck(deck)
+      const newGameState = this.initializeThreeOhFourGame(gameState.gameData.roomId, room.players, shuffledDeck)
+
+      this.roomManager.updateRoom(gameState.gameData.roomId, room)
+      
+      console.log('304 game restarted — all players agreed')
+      return newGameState
+    } else {
+      console.log(`Player ${playerId} requested to restart game. Waiting for other player...`)
+      
+      gameState.gameData = threeOhFourData
       this.gameStates.set(gameState.gameData.roomId, gameState)
       return gameState
     }
@@ -623,17 +1318,21 @@ export class GameManager {
     }
 
     if (room.gameType === 'war') {
-      // In war, winner is the player with all cards
       const playersWithCards = room.players.filter((player: Player) => player.hand.length > 0)
       if (playersWithCards.length === 1) {
         return playersWithCards[0]
       }
-    } else {
-      // Check for win conditions (simplified)
-      for (const player of room.players) {
-        if (player.hand.length === 0) {
-          return player
-        }
+      return null
+    }
+
+    if (room.gameType === '304') {
+      // Hands end with finish_304_hand; session continues — no global game:ended winner per hand
+      return null
+    }
+
+    for (const player of room.players) {
+      if (player.hand.length === 0) {
+        return player
       }
     }
 
@@ -754,5 +1453,100 @@ export class GameManager {
     const nextIndex = (currentIndex + 1) % activePlayers.length
     gameState.currentPlayer = activePlayers[nextIndex].id
     gameState.turn++
+  }
+
+  /** Trick-taking strength: J > 9 > A > 10 > K > Q > 8 > 7 (higher number = stronger) */
+  private get304TrickStrength(rank: Rank): number {
+    const order: Partial<Record<Rank, number>> = {
+      J: 8,
+      '9': 7,
+      A: 6,
+      '10': 5,
+      K: 4,
+      Q: 3,
+      '8': 2,
+      '7': 1
+    }
+    return order[rank] ?? 0
+  }
+
+  private compare304TrickCards(a: Card, b: Card): number {
+    const ta = this.get304TrickStrength(a.rank)
+    const tb = this.get304TrickStrength(b.rank)
+    if (ta !== tb) return ta - tb
+    return this.getSuitValue(a.suit) - this.getSuitValue(b.suit)
+  }
+
+  private determine304TrickWinner(trick: Card[], trumpSuit: Suit | null): string {
+    if (trick.length === 0) {
+      return ''
+    }
+    const leadingSuit = trick[0].suit
+    const trumpCards = trumpSuit ? trick.filter((card) => card.suit === trumpSuit) : []
+    const pool = trumpCards.length > 0 ? trumpCards : trick.filter((card) => card.suit === leadingSuit)
+
+    let best = pool[0]
+    for (let i = 1; i < pool.length; i++) {
+      if (this.compare304TrickCards(pool[i], best) > 0) {
+        best = pool[i]
+      }
+    }
+    return (best as Card & { playerId: string }).playerId
+  }
+
+  private get304CardValue(rank: string): number {
+    // 304 card values: J=30, 9=20, A=11, 10=10, K=3, Q=2, 8=0, 7=0
+    switch (rank) {
+      case 'J': return 30;
+      case '9': return 20;
+      case 'A': return 11;
+      case '10': return 10;
+      case 'K': return 3;
+      case 'Q': return 2;
+      case '8': return 0;
+      case '7': return 0;
+      default: return 0;
+    }
+  }
+
+  private getSuitValue(suit: string): number {
+    switch (suit) {
+      case 'spades': return 4;
+      case 'hearts': return 3;
+      case 'diamonds': return 2;
+      case 'clubs': return 1;
+      default: return 0;
+    }
+  }
+
+  private canPlayPartnerCard(partnerCard: Card, currentTrick: Card[], playerHand: Card[]): boolean {
+    // If no trick started yet, partner card can always be played
+    if (currentTrick.length === 0) {
+      return true;
+    }
+
+    const leadingSuit = currentTrick[0].suit;
+    
+    // If partner card is the same suit as leading suit, can always play it
+    if (partnerCard.suit === leadingSuit) {
+      return true;
+    }
+    
+    // If partner card is different suit, can only play if player has no cards of leading suit
+    const hasLeadingSuitCards = playerHand.some(card => card.suit === leadingSuit);
+    return !hasLeadingSuitCards;
+  }
+
+  /** Must follow led suit when possible; if void, any card is legal. */
+  private isLegalCardPlay304(playedCard: Card, currentTrick: Card[], playerHand: Card[]): boolean {
+    if (currentTrick.length === 0) {
+      return true
+    }
+    const leadingSuit = currentTrick[0].suit
+    const hasLedSuit = playerHand.some((card) => card.suit === leadingSuit)
+    if (hasLedSuit) {
+      return playedCard.suit === leadingSuit
+    }
+    return true
   }
 } 

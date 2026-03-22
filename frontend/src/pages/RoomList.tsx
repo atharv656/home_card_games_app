@@ -88,6 +88,7 @@ const RoomList: React.FC = () => {
     switch (gameType) {
       case 'war': return 'bg-red-500'
       case 'speed': return 'bg-yellow-500'
+      case '304': return 'bg-orange-500'
       case 'poker': return 'bg-purple-500'
       case 'blackjack': return 'bg-red-500'
       case 'hearts': return 'bg-pink-500'
@@ -101,6 +102,7 @@ const RoomList: React.FC = () => {
     switch (gameType) {
       case 'war': return 'Battle card game'
       case 'speed': return 'Fast-paced racing'
+      case '304': return 'Bidding & trick-taking'
       case 'poker': return 'Classic poker'
       case 'blackjack': return 'Beat the dealer'
       case 'hearts': return 'Trick-taking game'

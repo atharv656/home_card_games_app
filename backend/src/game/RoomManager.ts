@@ -21,6 +21,7 @@ export class RoomManager {
         turnTimeLimit: roomConfig.settings?.turnTimeLimit || 60,
         ...roomConfig.settings,
       },
+      sessionScores304: roomConfig.gameType === '304' ? {} : undefined,
     }
 
     this.rooms.set(roomId, room)

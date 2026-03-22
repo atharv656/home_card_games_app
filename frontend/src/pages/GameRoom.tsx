@@ -6,7 +6,7 @@ import Card from '../components/Card'
 import Hand from '../components/Hand'
 
 // Import game data types from shared types
-import type { WarGameData, SpeedGameData, Card as CardType } from '../../../shared/types'
+import type { WarGameData, SpeedGameData, ThreeOhFourGameData, Card as CardType, Suit } from '../../../shared/types'
 
 const GameRoom: React.FC = () => {
   const { roomId } = useParams<{ roomId: string }>()
@@ -29,11 +29,18 @@ const GameRoom: React.FC = () => {
   const [isReady, setIsReady] = useState(false)
   const [battleResult, setBattleResult] = useState<any>(null)
   const [showBattleResult, setShowBattleResult] = useState(false)
+  const [bidInput, setBidInput] = useState('')
+  const [partnerSuit, setPartnerSuit] = useState<'spades' | 'hearts' | 'diamonds' | 'clubs' | null>(null)
+  const [partnerRank, setPartnerRank] = useState<'J' | '9' | 'A' | '10' | 'K' | 'Q' | '8' | '7' | null>(null)
+  const [callPartnerThisLead, setCallPartnerThisLead] = useState(false)
+  const [marriageSuitSelection, setMarriageSuitSelection] = useState<Suit[]>([])
 
   const isWarGame = currentRoom?.gameType === 'war'
   const isSpeedGame = currentRoom?.gameType === 'speed'
+  const is304Game = currentRoom?.gameType === '304'
   const warData = gameState?.gameData as WarGameData | undefined
   const speedData = gameState?.gameData as SpeedGameData | undefined
+  const threeOhFourData = gameState?.gameData as ThreeOhFourGameData | undefined
 
   useEffect(() => {
     if (!roomId) {
@@ -82,15 +89,15 @@ const GameRoom: React.FC = () => {
       socket.on('game:updated', (gameStateData) => {
         console.log('Game updated:', gameStateData)
         setGameState(gameStateData)
-        
-        // Handle Speed game restart - reset to waiting state
-        if (isSpeedGame && gameStateData.gameData?.gamePhase === 'waiting_for_ready') {
+
+        const gt = (gameStateData.gameData as { gameType?: string })?.gameType
+
+        if (gt === 'speed' && gameStateData.gameData?.gamePhase === 'waiting_for_ready') {
           setIsGameStarted(false)
           console.log('Speed game restarted - resetting to waiting state')
         }
-        
-        // Handle War-specific battle results
-        if (isWarGame && gameStateData.phase === 'battle') {
+
+        if (gt === 'war' && gameStateData.phase === 'battle') {
           const warGameData = gameStateData.gameData as WarGameData
           if (warGameData.battleResult === 'winner' && warGameData.lastBattleWinner) {
             setBattleResult({
@@ -99,7 +106,7 @@ const GameRoom: React.FC = () => {
             })
             setShowBattleResult(true)
           }
-        } else if (isWarGame && gameStateData.phase === 'war') {
+        } else if (gt === 'war' && gameStateData.phase === 'war') {
           setBattleResult({
             winner: null,
             isWar: true
@@ -254,6 +261,163 @@ const GameRoom: React.FC = () => {
     }
   }
 
+  // 304 game action handlers
+  const handleBid = (amount: number) => {
+    if (socket && roomId && currentPlayer) {
+      socket.emit('game:action', roomId, {
+        type: 'bid',
+        playerId: currentPlayer.id,
+        data: { amount }
+      })
+    }
+  }
+
+  // Reset partner selection state when game phase changes
+  useEffect(() => {
+    if (threeOhFourData?.gamePhase !== 'partner_selection') {
+      setPartnerSuit(null)
+      setPartnerRank(null)
+    }
+  }, [threeOhFourData?.gamePhase])
+
+  const handlePass = () => {
+    if (socket && roomId && currentPlayer) {
+      socket.emit('game:action', roomId, {
+        type: 'pass_bid',
+        playerId: currentPlayer.id,
+        data: {}
+      })
+    }
+  }
+
+  const handlePlayCard304 = (cardId: string) => {
+    if (!socket || !roomId || !currentPlayer || !threeOhFourData) return
+
+    const isLeading =
+      gameState?.currentPlayer === currentPlayer.id &&
+      threeOhFourData.currentTrick.length === 0 &&
+      threeOhFourData.leadPlayer === currentPlayer.id
+
+    const callPartner = Boolean(
+      isLeading &&
+      threeOhFourData.bidWinner === currentPlayer.id &&
+      !threeOhFourData.partnershipResolved &&
+      callPartnerThisLead
+    )
+
+    socket.emit('game:action', roomId, {
+      type: 'play_card',
+      playerId: currentPlayer.id,
+      data: { cardId, callPartner }
+    })
+    setCallPartnerThisLead(false)
+  }
+
+  const handleDeclareMarriages = () => {
+    if (!socket || !roomId || !currentPlayer || marriageSuitSelection.length === 0) return
+    socket.emit('game:action', roomId, {
+      type: 'declare_marriages',
+      playerId: currentPlayer.id,
+      data: { suits: marriageSuitSelection }
+    })
+    setMarriageSuitSelection([])
+  }
+
+  const handleFinish304Hand = () => {
+    if (!socket || !roomId || !currentPlayer) return
+    socket.emit('game:action', roomId, {
+      type: 'finish_304_hand',
+      playerId: currentPlayer.id,
+      data: {}
+    })
+  }
+
+  const handleSelectTrump = (trumpSuit: 'spades' | 'hearts' | 'diamonds' | 'clubs') => {
+    if (socket && roomId && currentPlayer) {
+      socket.emit('game:action', roomId, {
+        type: 'select_trump',
+        playerId: currentPlayer.id,
+        data: { trumpSuit }
+      })
+    }
+  }
+
+  const handleSelectPartner = (suit: 'spades' | 'hearts' | 'diamonds' | 'clubs', rank: 'J' | '9' | 'A' | '10' | 'K' | 'Q' | '8' | '7') => {
+    if (socket && roomId && currentPlayer) {
+      socket.emit('game:action', roomId, {
+        type: 'select_partner',
+        playerId: currentPlayer.id,
+        data: { partnerCard: { suit, rank } }
+      })
+    }
+  }
+
+  useEffect(() => {
+    if ((threeOhFourData?.currentTrick?.length ?? 0) > 0) {
+      setCallPartnerThisLead(false)
+    }
+  }, [threeOhFourData?.currentTrick?.length])
+
+  // 304 card sorting function
+  const sort304Cards = (cards: CardType[]): CardType[] => {
+    const suitOrder = { 'spades': 0, 'hearts': 1, 'diamonds': 2, 'clubs': 3 }
+    const rankOrder = { 'J': 7, '9': 6, 'A': 5, '10': 4, 'K': 3, 'Q': 2, '8': 1, '7': 0 }
+    
+    return [...cards].sort((a, b) => {
+      // First sort by suit
+      const suitComparison = suitOrder[a.suit as keyof typeof suitOrder] - suitOrder[b.suit as keyof typeof suitOrder]
+      if (suitComparison !== 0) {
+        return suitComparison
+      }
+      
+      // Then sort by 304 rank value (highest to lowest)
+      return rankOrder[b.rank as keyof typeof rankOrder] - rankOrder[a.rank as keyof typeof rankOrder]
+    })
+  }
+
+  const canPlayCard304 = (card: CardType): boolean => {
+    if (!threeOhFourData || !gameState || gameState.currentPlayer !== currentPlayer?.id) {
+      return false
+    }
+    if (threeOhFourData.gamePhase !== 'playing' || threeOhFourData.awaitingFinalDeclarations) {
+      return false
+    }
+
+    const hand = currentPlayer?.hand || []
+    const trick = threeOhFourData.currentTrick
+    const pc = threeOhFourData.partnerCard
+
+    if (
+      threeOhFourData.partnerCallThisTrick &&
+      !threeOhFourData.partnershipResolved &&
+      pc &&
+      currentPlayer?.id === threeOhFourData.partnerHolderId
+    ) {
+      const hasPartner = hand.some((c) => c.rank === pc.rank && c.suit === pc.suit)
+      if (hasPartner) {
+        const led = trick[0]?.suit
+        const canPlayPartner =
+          trick.length === 0 ||
+          pc.suit === led ||
+          !hand.some((c) => c.suit === led)
+        if (canPlayPartner && (card.rank !== pc.rank || card.suit !== pc.suit)) {
+          return false
+        }
+      }
+    }
+
+    if (trick.length === 0) {
+      return true
+    }
+
+    const leadingSuit = trick[0].suit
+    const hasLedSuit = hand.some((c) => c.suit === leadingSuit)
+    if (hasLedSuit) {
+      return card.suit === leadingSuit
+    }
+    return true
+  }
+
   const canPlayCard = (card: CardType, targetPile: 'left' | 'right') => {
     if (!speedData) return false
     
@@ -378,12 +542,17 @@ const GameRoom: React.FC = () => {
           {/* Game Controls - Right Side */}
           <div className="w-48 flex flex-col justify-center">
             {speedData.gamePhase === 'waiting_for_ready' && (
-              <button
-                onClick={handleSpeedReadyToStart}
-                className="px-4 py-3 rounded-lg font-semibold bg-green-600 hover:bg-green-700 text-white text-sm mb-4"
-              >
-                ⚡ Start Speed Game
-              </button>
+              <div className="space-y-2">
+                <div className="text-teal-200 text-xs text-center">
+                  Ready: {speedData.readyToStartPlayerIds?.length || 0}/2 players
+                </div>
+                <button
+                  onClick={handleSpeedReadyToStart}
+                  className="w-full px-4 py-3 rounded-lg font-semibold bg-green-600 hover:bg-green-700 text-white text-sm"
+                >
+                  ⚡ I&apos;m Ready
+                </button>
+              </div>
             )}
 
             {speedData.gamePhase === 'playing' && (
@@ -628,6 +797,408 @@ const GameRoom: React.FC = () => {
     )
   }
 
+  const render304GameBoard = () => {
+    if (!is304Game || !gameState || !threeOhFourData) {
+      return null
+    }
+
+    const myPlayer = getMyPlayer()
+
+    return (
+      <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 mb-3">
+        <div className="game-table rounded-xl p-8">
+          <div className="text-center mb-4">
+            <h3 className="text-2xl font-bold text-white mb-2">304 Game</h3>
+            <div className="text-teal-200">
+              Phase: {threeOhFourData.gamePhase} • Round: {gameState.round}
+            </div>
+            {threeOhFourData.trumpSuit && (
+              <div className="text-yellow-400 font-semibold">
+                Trump: {threeOhFourData.trumpSuit}
+              </div>
+            )}
+          </div>
+
+          {/* Bidding Phase */}
+          {threeOhFourData.gamePhase === 'bidding' && (
+            <div className="text-center mb-6">
+              <div className="text-white font-semibold mb-4">
+                Bidding Phase - Current Bid: {threeOhFourData.bidAmount}
+              </div>
+              {threeOhFourData.currentBidder === myPlayer?.id ? (
+                <div className="space-y-4">
+                  <div className="text-yellow-400 font-semibold">Your turn to bid!</div>
+                  <div className="flex justify-center items-center gap-4">
+                    <input
+                      type="number"
+                      value={bidInput}
+                      onChange={(e) => setBidInput(e.target.value)}
+                      placeholder={`Minimum: ${threeOhFourData.bidAmount + 1}`}
+                      min={threeOhFourData.bidAmount + 1}
+                      max="304"
+                      className="w-24 px-3 py-2 rounded bg-white/20 text-white placeholder-gray-300 border border-white/30 focus:outline-none focus:ring-2 focus:ring-teal-400"
+                    />
+                    <button
+                      onClick={() => {
+                        const bid = parseInt(bidInput)
+                        if (!isNaN(bid) && bid > threeOhFourData.bidAmount) {
+                          handleBid(bid)
+                          setBidInput('')
+                        }
+                      }}
+                      disabled={!bidInput || parseInt(bidInput) <= threeOhFourData.bidAmount}
+                      className={`px-4 py-2 rounded ${
+                        !bidInput || parseInt(bidInput) <= threeOhFourData.bidAmount
+                          ? 'bg-gray-600 text-gray-400' 
+                          : 'bg-blue-600 hover:bg-blue-700 text-white'
+                      }`}
+                    >
+                      Bid
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => handlePass()}
+                    className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded"
+                  >
+                    Pass
+                  </button>
+                </div>
+              ) : (
+                <div className="text-teal-200">
+                  Waiting for {currentRoom?.players?.find(p => p.id === threeOhFourData.currentBidder)?.name} to bid...
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Trump Selection Phase */}
+          {threeOhFourData.gamePhase === 'trump_selection' && (
+            <div className="text-center mb-6">
+              <div className="text-white font-semibold mb-4">
+                Trump Selection - Winning Bid: {threeOhFourData.bidAmount}
+              </div>
+              {threeOhFourData.bidWinner === myPlayer?.id ? (
+                <div className="space-y-4">
+                  <div className="text-yellow-400 font-semibold">You won the bid! Select trump suit:</div>
+                  <div className="flex justify-center gap-4">
+                    {(['spades', 'hearts', 'diamonds', 'clubs'] as const).map(suit => (
+                      <button
+                        key={suit}
+                        onClick={() => handleSelectTrump(suit)}
+                        className="px-6 py-3 rounded bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-2"
+                      >
+                        <span className="text-2xl">
+                          {suit === 'spades' ? '♠️' : suit === 'hearts' ? '♥️' : suit === 'diamonds' ? '♦️' : '♣️'}
+                        </span>
+                        {suit.charAt(0).toUpperCase() + suit.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-teal-200">
+                  Waiting for {currentRoom?.players?.find(p => p.id === threeOhFourData.bidWinner)?.name} to select trump suit...
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Partner Selection Phase */}
+          {threeOhFourData.gamePhase === 'partner_selection' && (
+            <div className="text-center mb-6">
+              <div className="text-white font-semibold mb-4">
+                Partner Selection - Trump: {threeOhFourData.trumpSuit} | Bid: {threeOhFourData.bidAmount}
+              </div>
+              {threeOhFourData.bidWinner === myPlayer?.id ? (
+                <div className="space-y-4">
+                  <div className="text-yellow-400 font-semibold">Select your partner's card:</div>
+                  
+                  {/* Suit Selection */}
+                  <div>
+                    <div className="text-white font-semibold mb-2">Select Suit:</div>
+                    <div className="flex justify-center gap-3">
+                      {(['spades', 'hearts', 'diamonds', 'clubs'] as const).map(suit => (
+                        <button
+                          key={suit}
+                          onClick={() => setPartnerSuit(suit)}
+                          className={`px-4 py-2 rounded font-semibold flex items-center gap-2 ${
+                            partnerSuit === suit 
+                              ? 'bg-blue-600 text-white' 
+                              : 'bg-gray-600 hover:bg-gray-500 text-white'
+                          }`}
+                        >
+                          <span className="text-xl">
+                            {suit === 'spades' ? '♠️' : suit === 'hearts' ? '♥️' : suit === 'diamonds' ? '♦️' : '♣️'}
+                          </span>
+                          {suit.charAt(0).toUpperCase() + suit.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Rank Selection */}
+                  <div>
+                    <div className="text-white font-semibold mb-2">Select Rank:</div>
+                    <div className="flex justify-center gap-2 flex-wrap">
+                      {(['J', '9', 'A', '10', 'K', 'Q', '8', '7'] as const).map(rank => (
+                        <button
+                          key={rank}
+                          onClick={() => setPartnerRank(rank)}
+                          className={`px-3 py-2 rounded font-semibold ${
+                            partnerRank === rank 
+                              ? 'bg-blue-600 text-white' 
+                              : 'bg-gray-600 hover:bg-gray-500 text-white'
+                          }`}
+                        >
+                          {rank}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Confirm Selection */}
+                  {partnerSuit && partnerRank && (
+                    <div className="space-y-3">
+                      <div className="text-teal-200">
+                        Selected Partner Card: <span className="font-bold">{partnerRank} of {partnerSuit}</span>
+                      </div>
+                      <button
+                        onClick={() => handleSelectPartner(partnerSuit, partnerRank)}
+                        className="px-6 py-3 rounded bg-green-600 hover:bg-green-700 text-white font-semibold"
+                      >
+                        Confirm Partner Selection
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-teal-200">
+                  Waiting for {currentRoom?.players?.find(p => p.id === threeOhFourData.bidWinner)?.name} to select their partner...
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Playing Phase */}
+          {threeOhFourData.gamePhase === 'playing' && (
+            <div className="text-center mb-6">
+              <div className="text-white font-semibold mb-4">
+                Playing — Trump: {threeOhFourData.trumpSuit} | High bid: {threeOhFourData.bidAmount}
+                {threeOhFourData.partnerCard && (
+                  <span className="block text-sm text-teal-200 mt-1">
+                    Partner card: {threeOhFourData.partnerCard.rank} of {threeOhFourData.partnerCard.suit}
+                  </span>
+                )}
+              </div>
+              <div className="text-white font-semibold mb-4 text-sm space-y-1">
+                <div>
+                  Bidder trick points: {threeOhFourData.bidderTrickPoints ?? threeOhFourData.roundScores?.team1 ?? 0}{' '}
+                  — need ≥{' '}
+                  {(threeOhFourData.bidAmount ?? 0) + (threeOhFourData.contractTargetDelta ?? 0)} (bid + contract
+                  adjustments)
+                </div>
+                <div className="text-blue-200">
+                  Tricks — bidder side: {threeOhFourData.tricksWon.team1}, defenders:{' '}
+                  {threeOhFourData.tricksWon.team2}
+                </div>
+                {threeOhFourData.leadPlayer && (
+                  <div className="text-orange-200">
+                    Leading: {currentRoom?.players?.find((p) => p.id === threeOhFourData.leadPlayer)?.name || '—'}
+                  </div>
+                )}
+                {threeOhFourData.partnerCallThisTrick && (
+                  <div className="text-yellow-200">Partner called on this trick — holder must play the partner card if legal.</div>
+                )}
+                {threeOhFourData.awaitingFinalDeclarations && (
+                  <div className="text-pink-200">
+                    Finalizing: the team that won the last trick may declare marriages, then any member of that team
+                    can end the hand.
+                  </div>
+                )}
+                {threeOhFourData.partnershipResolved && (
+                  <div className={threeOhFourData.isTwoVsTwo ? 'text-green-200' : 'text-amber-200'}>
+                    {threeOhFourData.isTwoVsTwo
+                      ? 'Partnership: 2v2 (bidder + partner)'
+                      : 'Partnership: 1v3 (bidder alone)'}
+                  </div>
+                )}
+              </div>
+              
+              {/* Current Trick */}
+              {threeOhFourData.currentTrick.length > 0 && (
+                <div className="mb-4">
+                  <div className="text-white font-semibold mb-2">Current Trick:</div>
+                  <div className="flex justify-center gap-2">
+                    {threeOhFourData.currentTrick.map((card, index) => (
+                      <div key={index} className="scale-75">
+                        <Card
+                          card={card}
+                          isDraggable={false}
+                          isPlayable={false}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Player Turn Indicator */}
+              {threeOhFourData.pendingMarriagePlayerIds?.includes(myPlayer?.id || '') &&
+                threeOhFourData.currentTrick.length === 0 &&
+                threeOhFourData.gamePhase === 'playing' && (
+                  <div className="mb-4 p-3 rounded-lg bg-white/10 text-left max-w-md mx-auto">
+                    <div className="text-white font-semibold text-sm mb-2">Declare marriages (optional)</div>
+                    <div className="text-teal-200 text-xs mb-2">
+                      Only if <span className="font-semibold">your team won the last trick</span>. Trump K+Q = 40 pts;
+                      other suits = 20 each. You must still hold both K and Q. If you <span className="font-semibold">played</span> K or Q of a suit on that trick, you cannot claim that suit&apos;s marriage. After the last trick, use &quot;End hand&quot; when done.
+                    </div>
+                    <div className="flex flex-wrap gap-2 justify-center mb-2">
+                      {(['spades', 'hearts', 'diamonds', 'clubs'] as const).map((suit) => {
+                        const broken =
+                          myPlayer?.id &&
+                          threeOhFourData.marriageBrokenSuitsThisRound?.[myPlayer.id]?.includes(suit)
+                        const hasK = myPlayer?.hand?.some((c) => c.suit === suit && c.rank === 'K')
+                        const hasQ = myPlayer?.hand?.some((c) => c.suit === suit && c.rank === 'Q')
+                        const eligible = hasK && hasQ && !broken
+                        const selected = marriageSuitSelection.includes(suit)
+                        return (
+                          <button
+                            key={suit}
+                            type="button"
+                            disabled={!eligible}
+                            onClick={() => {
+                              setMarriageSuitSelection((prev) =>
+                                selected ? prev.filter((s) => s !== suit) : [...prev, suit]
+                              )
+                            }}
+                            className={`px-2 py-1 rounded text-xs font-semibold ${
+                              !eligible
+                                ? 'bg-gray-700 text-gray-500'
+                                : selected
+                                  ? 'bg-amber-600 text-white'
+                                  : 'bg-gray-600 text-white hover:bg-gray-500'
+                            }`}
+                          >
+                            {suit}{' '}
+                            {broken ? '(played K/Q)' : !hasK || !hasQ ? '(no KQ)' : ''}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDeclareMarriages}
+                      disabled={marriageSuitSelection.length === 0}
+                      className="w-full px-3 py-2 rounded bg-amber-700 hover:bg-amber-600 text-white text-sm disabled:bg-gray-600 mb-2"
+                    >
+                      Declare selected marriages
+                    </button>
+                    {threeOhFourData.awaitingFinalDeclarations && (
+                      <button
+                        type="button"
+                        onClick={handleFinish304Hand}
+                        className="w-full px-3 py-2 rounded bg-green-700 hover:bg-green-600 text-white text-sm font-semibold"
+                      >
+                        End hand (finalize scores)
+                      </button>
+                    )}
+                  </div>
+                )}
+
+              {gameState.currentPlayer === myPlayer?.id ? (
+                <div className="text-yellow-400 font-semibold mb-4">
+                  Your turn to play a card!
+                  {threeOhFourData.bidWinner === myPlayer?.id &&
+                    !threeOhFourData.partnershipResolved &&
+                    threeOhFourData.currentTrick.length === 0 &&
+                    threeOhFourData.leadPlayer === myPlayer?.id && (
+                      <label className="mt-3 flex items-center justify-center gap-2 text-sm text-purple-200 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={callPartnerThisLead}
+                          onChange={(e) => setCallPartnerThisLead(e.target.checked)}
+                        />
+                        Call partner this trick (holder must play partner card if legal)
+                      </label>
+                    )}
+                </div>
+              ) : (
+                <div className="text-teal-200 mb-4">
+                  Waiting for {currentRoom?.players?.find(p => p.id === gameState.currentPlayer)?.name} to play...
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Game End */}
+          {threeOhFourData.gamePhase === 'ended' && (
+            <div className="text-center">
+              <div className="text-2xl font-bold text-white mb-4">
+                Game Over!
+              </div>
+              <div className="space-y-2 mb-4">
+                <div className="text-lg text-teal-200">
+                  Bid: {threeOhFourData.bidAmount} — contract adjustments (marriages, last trick):{' '}
+                  {threeOhFourData.contractTargetDelta ?? 0} → need ≥{' '}
+                  {(threeOhFourData.bidAmount ?? 0) + (threeOhFourData.contractTargetDelta ?? 0)} trick points on
+                  bidder side
+                </div>
+                <div className="text-lg text-blue-200">
+                  Bidder trick points: {threeOhFourData.bidderTrickPoints ?? threeOhFourData.roundScores.team1} —
+                  defenders: {threeOhFourData.defenseTrickPoints ?? threeOhFourData.roundScores.team2}
+                </div>
+                <div className="text-lg text-yellow-200">
+                  Contract{' '}
+                  {(threeOhFourData.bidderTrickPoints ?? 0) >=
+                  (threeOhFourData.bidAmount ?? 0) + (threeOhFourData.contractTargetDelta ?? 0)
+                    ? 'made ✓'
+                    : 'set ✗'}
+                </div>
+                {currentRoom?.last304Hand && (
+                  <div className="text-sm text-purple-200 border border-white/20 rounded-lg p-3 text-left max-w-md mx-auto">
+                    <div className="font-semibold text-white mb-1">Session points (this hand)</div>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      {Object.entries(currentRoom.last304Hand.awarded).map(([pid, pts]) => (
+                        <li key={pid}>
+                          {currentRoom?.players?.find((p) => p.id === pid)?.name ?? pid}: +{pts}
+                        </li>
+                      ))}
+                    </ul>
+                    {Object.keys(currentRoom.last304Hand.awarded).length === 0 && (
+                      <div className="text-teal-300/80">No session points awarded this hand.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center items-center mb-4">
+                <button
+                  onClick={handleRestartGame}
+                  className="px-8 py-3 rounded-lg font-semibold text-lg bg-green-600 hover:bg-green-700 text-white"
+                >
+                  🔁 Play again
+                  {threeOhFourData.restartRequests?.length > 0 && (
+                    <span className="block text-sm font-normal opacity-90">
+                      {threeOhFourData.restartRequests.length}/{currentRoom?.players?.length || 4} ready
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={handleLeaveRoom}
+                  className="px-8 py-3 rounded-lg font-semibold text-lg bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  🚪 Leave Room
+                </button>
+              </div>
+              <p className="text-teal-200/90 text-xs max-w-md mx-auto">
+                Everyone must choose Play again to start the next hand. Session totals stay in the sidebar.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   if (!roomId) {
     return <div>Invalid room</div>
   }
@@ -691,21 +1262,25 @@ const GameRoom: React.FC = () => {
                     {isReady ? '✅ Ready' : '⏳ Not Ready'}
                   </button>
                   
-                  {((isWarGame && isReady) || (isSpeedGame && isReady)) && (
+                  {((isWarGame && isReady) || (isSpeedGame && isReady) || (is304Game && isReady)) && (
                     <button
                       onClick={handleStartGame}
                       className={`w-full px-3 py-2 rounded text-sm font-semibold ${
                         isWarGame 
                           ? 'bg-green-600 hover:bg-green-700 text-white' 
-                          : 'bg-yellow-600 hover:bg-yellow-700 text-white'
+                          : isSpeedGame 
+                            ? 'bg-yellow-600 hover:bg-yellow-700 text-white'
+                            : 'bg-blue-600 hover:bg-blue-700 text-white'
                       } disabled:bg-gray-600 disabled:cursor-not-allowed`}
-                      disabled={!isReady || (currentRoom?.players?.length || 0) !== 2}
+                      disabled={!isReady || (currentRoom?.players?.length || 0) !== (is304Game ? 4 : 2)}
                     >
-                      {(currentRoom?.players?.length || 0) !== 2 
-                        ? 'Need 2 Players' 
+                      {(currentRoom?.players?.length || 0) !== (is304Game ? 4 : 2)
+                        ? (is304Game ? 'Need 4 Players' : 'Need 2 Players')
                         : isWarGame 
                           ? '🚀 Start War' 
-                          : '⚡ Start Speed'
+                          : isSpeedGame
+                            ? '⚡ Start Speed'
+                            : '🎯 Start 304'
                       }
                     </button>
                   )}
@@ -716,6 +1291,14 @@ const GameRoom: React.FC = () => {
             {/* Players List */}
             <div className="bg-white/10 backdrop-blur-md rounded-xl p-2">
               <h3 className="text-white font-semibold mb-1 text-sm">Players</h3>
+              {is304Game && (
+                <div className="text-[10px] text-amber-200/90 mb-2 border-b border-white/10 pb-2">
+                  <span className="font-semibold text-amber-100">304 session</span>
+                  <div className="text-teal-200/90 mt-0.5">
+                    Bidder +bid if made; partner +½ bid (2v2); defenders split ½ bid if set.
+                  </div>
+                </div>
+              )}
               <div className="space-y-1">
                 {currentRoom?.players?.map((player) => (
                   <div 
@@ -733,6 +1316,11 @@ const GameRoom: React.FC = () => {
                         </div>
                         <div className="text-xs text-teal-200">
                           Cards: {player.score || player.hand?.length || 0}
+                          {is304Game && (
+                            <span className="block text-amber-200/95">
+                              Session: {currentRoom?.sessionScores304?.[player.id] ?? 0}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-1">
@@ -759,8 +1347,11 @@ const GameRoom: React.FC = () => {
         {/* Speed Game Board */}
         {isSpeedGame && isGameStarted && renderSpeedGameBoard()}
 
+        {/* 304 Game Board */}
+        {is304Game && isGameStarted && render304GameBoard()}
+
         {/* Generic Game Board (for non-War and non-Speed games) */}
-        {!isWarGame && !isSpeedGame && isGameStarted && (
+        {!isWarGame && !isSpeedGame && !is304Game && isGameStarted && (
           <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 mb-3">
             <div className="game-table rounded-xl p-8">
               <div className="text-center mb-4">
@@ -862,12 +1453,54 @@ const GameRoom: React.FC = () => {
         {!isWarGame && !isSpeedGame && currentPlayer && currentPlayer.hand && currentPlayer.hand.length > 0 && (
           <div className="bg-white/10 backdrop-blur-md rounded-xl p-6">
             <h3 className="text-xl font-bold text-white mb-4">Your Hand</h3>
-            <Hand
-              cards={currentPlayer.hand}
-              selectedCards={selectedCards}
-              isPlayerTurn={isPlayerTurn}
-              layout="fan"
-            />
+            {is304Game ? (
+              <div className="flex flex-wrap gap-3 justify-center">
+                {sort304Cards(currentPlayer.hand).map((card) => {
+                  const isPlayable = canPlayCard304(card)
+                  const isMyTurn = gameState?.currentPlayer === currentPlayer.id && threeOhFourData?.gamePhase === 'playing'
+                  
+                  return (
+                    <div key={card.id} className="relative">
+                      <div
+                        onClick={() => {
+                          if (isMyTurn && isPlayable) {
+                            handlePlayCard304(card.id)
+                          }
+                        }}
+                        className={`cursor-pointer transition-all duration-200 transform hover:scale-105 hover:-translate-y-2 ${
+                          isMyTurn && isPlayable
+                            ? 'opacity-100 shadow-lg' 
+                            : isMyTurn 
+                              ? 'opacity-50 cursor-not-allowed grayscale' 
+                              : 'opacity-50'
+                        }`}
+                      >
+                        <Card
+                          card={card}
+                          isDraggable={false}
+                          isPlayable={isMyTurn && isPlayable}
+                        />
+                        {/* Visual indicator for unplayable cards */}
+                        {isMyTurn && !isPlayable && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="bg-red-600 text-white text-xs px-2 py-1 rounded opacity-80">
+                              ❌
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <Hand
+                cards={currentPlayer.hand}
+                selectedCards={selectedCards}
+                isPlayerTurn={isPlayerTurn}
+                layout="fan"
+              />
+            )}
           </div>
         )}
 
@@ -875,55 +1508,104 @@ const GameRoom: React.FC = () => {
         {!isGameStarted && (
           <div className="bg-white/10 backdrop-blur-md rounded-xl p-6">
             <h3 className="text-xl font-bold text-white mb-4">
-              {isWarGame ? 'War Game Preview' : isSpeedGame ? 'Speed Game Preview' : 'Demo Cards'}
+              {isWarGame ? 'War Game Preview' : isSpeedGame ? 'Speed Game Preview' : is304Game ? '304 Game Preview' : 'Demo Cards'}
             </h3>
             <div className="flex justify-center gap-4">
-              <Card
-                card={{
-                  id: 'demo-1',
-                  suit: 'hearts',
-                  rank: 'A',
-                  faceUp: true
-                }}
-                isDraggable={false}
-                isPlayable={false}
-              />
-              <Card
-                card={{
-                  id: 'demo-2',
-                  suit: 'spades',
-                  rank: 'K',
-                  faceUp: true
-                }}
-                isDraggable={false}
-                isPlayable={false}
-              />
-              <Card
-                card={{
-                  id: 'demo-3',
-                  suit: 'diamonds',
-                  rank: 'Q',
-                  faceUp: true
-                }}
-                isDraggable={false}
-                isPlayable={false}
-              />
-              <Card
-                card={{
-                  id: 'demo-4',
-                  suit: 'clubs',
-                  rank: 'J',
-                  faceUp: true
-                }}
-                isDraggable={false}
-                isPlayable={false}
-              />
+              {is304Game ? (
+                <>
+                  <Card
+                    card={{
+                      id: 'demo-1',
+                      suit: 'hearts',
+                      rank: 'J',
+                      faceUp: true
+                    }}
+                    isDraggable={false}
+                    isPlayable={false}
+                  />
+                  <Card
+                    card={{
+                      id: 'demo-2',
+                      suit: 'spades',
+                      rank: '9',
+                      faceUp: true
+                    }}
+                    isDraggable={false}
+                    isPlayable={false}
+                  />
+                  <Card
+                    card={{
+                      id: 'demo-3',
+                      suit: 'diamonds',
+                      rank: 'A',
+                      faceUp: true
+                    }}
+                    isDraggable={false}
+                    isPlayable={false}
+                  />
+                  <Card
+                    card={{
+                      id: 'demo-4',
+                      suit: 'clubs',
+                      rank: '10',
+                      faceUp: true
+                    }}
+                    isDraggable={false}
+                    isPlayable={false}
+                  />
+                </>
+              ) : (
+                <>
+                  <Card
+                    card={{
+                      id: 'demo-1',
+                      suit: 'hearts',
+                      rank: 'A',
+                      faceUp: true
+                    }}
+                    isDraggable={false}
+                    isPlayable={false}
+                  />
+                  <Card
+                    card={{
+                      id: 'demo-2',
+                      suit: 'spades',
+                      rank: 'K',
+                      faceUp: true
+                    }}
+                    isDraggable={false}
+                    isPlayable={false}
+                  />
+                  <Card
+                    card={{
+                      id: 'demo-3',
+                      suit: 'diamonds',
+                      rank: 'Q',
+                      faceUp: true
+                    }}
+                    isDraggable={false}
+                    isPlayable={false}
+                  />
+                  <Card
+                    card={{
+                      id: 'demo-4',
+                      suit: 'clubs',
+                      rank: 'J',
+                      faceUp: true
+                    }}
+                    isDraggable={false}
+                    isPlayable={false}
+                  />
+                </>
+              )}
             </div>
             <div className="text-center mt-4 text-teal-200">
               {isWarGame 
                 ? 'In War, you and your opponent will reveal cards from your decks. Higher card wins!'
                 : isSpeedGame
                 ? 'In Speed, race to play all your cards! Play cards consecutively (A-2-3, K-Q-J, etc.) on the center piles. First to empty your hand wins!'
+                : is304Game
+                ? 'In 304, bid on points, select trump and partner card. Teams start as bidder vs everyone else. Partner only joins if revealed before their card is played!'
                 : 'These are demo cards. Start a game to see your actual hand!'
               }
             </div>

@@ -9,7 +9,7 @@ const Home: React.FC = () => {
   const [isCreatingRoom, setIsCreatingRoom] = useState(false)
   const [roomName, setRoomName] = useState('')
   const [playerName, setPlayerName] = useState('')
-  const [gameType, setGameType] = useState<'war' | 'poker' | 'blackjack' | 'hearts' | 'go-fish' | 'speed'>('war')
+  const [gameType, setGameType] = useState<'war' | 'poker' | 'blackjack' | 'hearts' | 'go-fish' | 'speed' | '304'>('war')
 
   const handleCreateRoom = async () => {
     if (!socket || !isConnected) {
@@ -112,6 +112,12 @@ const Home: React.FC = () => {
               isNew={true}
             />
             <GameCard 
+              title="🎯 304" 
+              description="Strategic bidding and trick-taking"
+              players="4 players"
+              isNew={true}
+            />
+            <GameCard 
               title="♠️ Poker" 
               description="Classic 5-card poker game"
               players="2-4 players"
@@ -191,6 +197,7 @@ const Home: React.FC = () => {
                   >
                     <option value="war" className="bg-gray-800">⚔️ War (2 players)</option>
                     <option value="speed" className="bg-gray-800">⚡ Speed (2 players)</option>
+                    <option value="304" className="bg-gray-800">🎯 304 (4 players)</option>
                     <option value="poker" className="bg-gray-800">♠️ Poker (2-4 players)</option>
                     <option value="blackjack" className="bg-gray-800">♥️ Blackjack (1-6 players)</option>
                     <option value="hearts" className="bg-gray-800">♦️ Hearts (4 players)</option>
