@@ -673,9 +673,9 @@ export class GameManager {
       const newGameState = this.initializeSpeedGame(gameState.gameData.roomId, room.players, shuffledDeck)
       ;(newGameState.gameData as SpeedGameData).readyToStartPlayerIds = []
 
-      // Update the room with the reset player states
       this.roomManager.updateRoom(gameState.gameData.roomId, room)
-      
+      this.gameStates.set(gameState.gameData.roomId, newGameState)
+
       console.log('Speed game restarted by both players - all states reset')
       return newGameState
     } else {
@@ -1241,7 +1241,8 @@ export class GameManager {
       const newGameState = this.initializeThreeOhFourGame(gameState.gameData.roomId, room.players, shuffledDeck)
 
       this.roomManager.updateRoom(gameState.gameData.roomId, room)
-      
+      this.gameStates.set(gameState.gameData.roomId, newGameState)
+
       console.log('304 game restarted — all players agreed')
       return newGameState
     } else {

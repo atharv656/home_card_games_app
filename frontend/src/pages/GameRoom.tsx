@@ -34,6 +34,8 @@ const GameRoom: React.FC = () => {
   const [partnerRank, setPartnerRank] = useState<'J' | '9' | 'A' | '10' | 'K' | 'Q' | '8' | '7' | null>(null)
   const [callPartnerThisLead, setCallPartnerThisLead] = useState(false)
   const [marriageSuitSelection, setMarriageSuitSelection] = useState<Suit[]>([])
+  /** In-page celebration when server emits game:ended (War / Speed); cleared on new game */
+  const [matchWinnerCelebration, setMatchWinnerCelebration] = useState<{ winnerName: string } | null>(null)
 
   const isWarGame = currentRoom?.gameType === 'war'
   const isSpeedGame = currentRoom?.gameType === 'speed'
@@ -84,6 +86,7 @@ const GameRoom: React.FC = () => {
         console.log('Game started:', gameStateData)
         setGameState(gameStateData)
         setIsGameStarted(true)
+        setMatchWinnerCelebration(null)
       })
 
       socket.on('game:updated', (gameStateData) => {
@@ -94,6 +97,7 @@ const GameRoom: React.FC = () => {
 
         if (gt === 'speed' && gameStateData.gameData?.gamePhase === 'waiting_for_ready') {
           setIsGameStarted(false)
+          setMatchWinnerCelebration(null)
           console.log('Speed game restarted - resetting to waiting state')
         }
 
@@ -117,7 +121,7 @@ const GameRoom: React.FC = () => {
 
       socket.on('game:ended', (winner) => {
         console.log('Game ended, winner:', winner)
-        alert(`Game Over! Winner: ${winner.name}`)
+        setMatchWinnerCelebration({ winnerName: winner.name })
       })
 
       socket.on('battle:result', (result) => {
@@ -1170,6 +1174,29 @@ const GameRoom: React.FC = () => {
                   </div>
                 )}
               </div>
+              {(() => {
+                const need =
+                  (threeOhFourData.bidAmount ?? 0) + (threeOhFourData.contractTargetDelta ?? 0)
+                const made = (threeOhFourData.bidderTrickPoints ?? 0) >= need
+                const bidderName =
+                  currentRoom?.players?.find((p) => p.id === threeOhFourData.bidWinner)?.name ??
+                  'Bidder'
+                return (
+                  <div className="rounded-xl border border-amber-400/50 bg-gradient-to-br from-amber-900/45 via-fuchsia-900/35 to-teal-900/45 px-4 py-4 mb-4 max-w-lg mx-auto shadow-lg">
+                    <div className="text-3xl leading-none mb-2 text-center select-none" aria-hidden>
+                      🎊 ✨ 🎉
+                    </div>
+                    <p className="text-lg sm:text-xl font-bold text-white text-center">
+                      {made
+                        ? `${bidderName}'s side made the contract!`
+                        : 'Defenders set the contract!'}
+                    </p>
+                    <p className="text-sm text-teal-100/90 text-center mt-1">
+                      {made ? 'Hand won by the bidding team' : 'Hand won by the defense'}
+                    </p>
+                  </div>
+                )
+              })()}
               <div className="flex flex-col sm:flex-row gap-3 justify-center items-center mb-4">
                 <button
                   onClick={handleRestartGame}
@@ -1203,7 +1230,9 @@ const GameRoom: React.FC = () => {
     return <div>Invalid room</div>
   }
 
-
+  const playersInRoom = currentRoom?.players?.length ?? 0
+  const readyPlayerCount = currentRoom?.players?.filter((p) => p.isReady).length ?? 0
+  const playersNeededToStart = is304Game ? 4 : 2
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-teal-800 to-teal-900 px-3 py-1">
@@ -1241,12 +1270,18 @@ const GameRoom: React.FC = () => {
             <div className="bg-white/10 backdrop-blur-md rounded-xl p-2">
               <div className="text-white text-sm font-semibold mb-1">Game Status</div>
               <div className="text-teal-200 text-xs mb-1">
-                Players: {currentRoom?.players?.length || 0}/{currentRoom?.maxPlayers || 4}
-        </div>
+                Players: {playersInRoom}/{currentRoom?.maxPlayers || 4}
+              </div>
+              {!isGameStarted && (
+                <div className="text-amber-200/95 text-xs mb-2 font-medium">
+                  Ready: {readyPlayerCount}/{playersInRoom || playersNeededToStart}
+                  {playersInRoom > 0 ? ' in room' : ` (need ${playersNeededToStart} to start)`}
+                </div>
+              )}
               {isGameStarted && (
                 <div className="text-yellow-400 text-xs">
                   🎮 Game in Progress
-      </div>
+                </div>
               )}
               
               {!isGameStarted && (
@@ -1272,15 +1307,17 @@ const GameRoom: React.FC = () => {
                             ? 'bg-yellow-600 hover:bg-yellow-700 text-white'
                             : 'bg-blue-600 hover:bg-blue-700 text-white'
                       } disabled:bg-gray-600 disabled:cursor-not-allowed`}
-                      disabled={!isReady || (currentRoom?.players?.length || 0) !== (is304Game ? 4 : 2)}
+                      disabled={
+                        !isReady ||
+                        playersInRoom !== playersNeededToStart ||
+                        readyPlayerCount !== playersInRoom
+                      }
                     >
-                      {(currentRoom?.players?.length || 0) !== (is304Game ? 4 : 2)
-                        ? (is304Game ? 'Need 4 Players' : 'Need 2 Players')
-                        : isWarGame 
-                          ? '🚀 Start War' 
-                          : isSpeedGame
-                            ? '⚡ Start Speed'
-                            : '🎯 Start 304'
+                      {playersInRoom !== playersNeededToStart
+                        ? `${is304Game ? 'Need 4 Players' : 'Need 2 Players'} (${readyPlayerCount}/${playersInRoom} ready)`
+                        : readyPlayerCount !== playersInRoom
+                          ? `Waiting for all ready (${readyPlayerCount}/${playersNeededToStart})`
+                          : `${isWarGame ? '🚀 Start War' : isSpeedGame ? '⚡ Start Speed' : '🎯 Start 304'} — all ${playersNeededToStart} ready`
                       }
                     </button>
                   )}
@@ -1340,6 +1377,20 @@ const GameRoom: React.FC = () => {
 
           {/* Main Game Area */}
           <div className="flex-1">
+            {matchWinnerCelebration && (
+              <div
+                className="mb-3 rounded-xl border border-amber-400/50 bg-gradient-to-br from-amber-900/50 via-fuchsia-900/40 to-teal-900/50 px-4 py-4 text-center shadow-lg"
+                role="status"
+              >
+                <div className="text-3xl leading-none mb-2 select-none" aria-hidden>
+                  🎊 ✨ 🎉
+                </div>
+                <p className="text-lg sm:text-xl font-bold text-white">
+                  {matchWinnerCelebration.winnerName} wins!
+                </p>
+                <p className="text-sm text-teal-100/90 mt-1">Game over</p>
+              </div>
+            )}
 
         {/* War Game Board */}
         {isWarGame && isGameStarted && renderWarGameBoard()}
