@@ -91,7 +91,19 @@ const GameRoom: React.FC = () => {
 
       socket.on('game:updated', (gameStateData) => {
         console.log('Game updated:', gameStateData)
-        setGameState(gameStateData)
+        setGameState((prev) => {
+          const gtNew = (gameStateData.gameData as { gameType?: string })?.gameType
+          const gtPrev = (prev?.gameData as { gameType?: string })?.gameType
+          if (gtNew === '304' && gtPrev === '304') {
+            const rNew = gameStateData.round ?? 0
+            const rPrev = prev?.round ?? 0
+            if (rNew < rPrev) {
+              console.warn('Ignoring stale game:updated (304 round went backwards)')
+              return prev
+            }
+          }
+          return gameStateData
+        })
 
         const gt = (gameStateData.gameData as { gameType?: string })?.gameType
 

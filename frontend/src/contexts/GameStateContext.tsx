@@ -15,7 +15,9 @@ interface GameStore {
   
   // Actions
   setCurrentRoom: (room: GameRoom | null) => void
-  setGameState: (state: GameState | null) => void
+  setGameState: (
+    state: GameState | null | ((prev: GameState | null) => GameState | null)
+  ) => void
   setCurrentPlayer: (player: Player | null) => void
   setSelectedCards: (cards: Card[]) => void
   toggleCardSelection: (card: Card) => void
@@ -35,7 +37,10 @@ const useGameStore = create<GameStore>((set, get) => ({
   
   // Actions
   setCurrentRoom: (room) => set({ currentRoom: room }),
-  setGameState: (state) => set({ gameState: state }),
+  setGameState: (state) =>
+    set((s) => ({
+      gameState: typeof state === 'function' ? state(s.gameState) : state,
+    })),
   setCurrentPlayer: (player) => set({ currentPlayer: player }),
   setSelectedCards: (cards) => set({ selectedCards: cards }),
   toggleCardSelection: (card) => {

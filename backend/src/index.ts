@@ -43,6 +43,18 @@ if (process.env.NODE_ENV === 'production') {
 const roomManager = new RoomManager()
 const gameManager = new GameManager(roomManager)
 
+/** One in-flight start/action per room so concurrent sockets cannot corrupt game state (e.g. overlapping restart_game). */
+const roomGameOpChain = new Map<string, Promise<unknown>>()
+
+function enqueueRoomGameOp(roomId: string, op: () => Promise<void>): void {
+  const prev = roomGameOpChain.get(roomId) ?? Promise.resolve()
+  const next = prev
+    .catch(() => {})
+    .then(() => op())
+    .catch(() => {})
+  roomGameOpChain.set(roomId, next)
+}
+
 console.log('🏗️ RoomManager created:', !!roomManager)
 console.log('🏗️ GameManager created:', !!gameManager)
 
@@ -156,18 +168,19 @@ io.on('connection', (socket) => {
   // Leave room
   socket.on('room:leave', async (roomId: string) => {
     try {
-      await roomManager.leaveRoom(roomId, socket.id)
+      const roomRemoved = await roomManager.leaveRoom(roomId, socket.id)
       socket.leave(roomId)
-      
-      // Notify other players
+
       socket.to(roomId).emit('player:left', socket.id)
-      
-      // Get updated room info
-      const room = roomManager.getRoom(roomId)
-      if (room) {
-        io.to(roomId).emit('room:updated', room)
+
+      if (roomRemoved) {
+        gameManager.removeGameState(roomId)
+      } else {
+        const room = roomManager.getRoom(roomId)
+        if (room) {
+          io.to(roomId).emit('room:updated', room)
+        }
       }
-      
     } catch (error) {
       socket.emit('error', `Failed to leave room: ${error}`)
     }
@@ -220,46 +233,44 @@ io.on('connection', (socket) => {
   })
 
   // Start game
-  socket.on('game:start', async (roomId: string) => {
-    try {
-      const gameState = await gameManager.startGame(roomId, socket.id)
-      
-      // Get updated room with player hands
-      const updatedRoom = roomManager.getRoom(roomId)
-      
-      // Send game state and updated room info
-      io.to(roomId).emit('game:started', gameState)
-      
-      if (updatedRoom) {
-        io.to(roomId).emit('room:updated', updatedRoom)
+  socket.on('game:start', (roomId: string) => {
+    enqueueRoomGameOp(roomId, async () => {
+      try {
+        const gameState = await gameManager.startGame(roomId, socket.id)
+
+        const updatedRoom = roomManager.getRoom(roomId)
+
+        io.to(roomId).emit('game:started', gameState)
+
+        if (updatedRoom) {
+          io.to(roomId).emit('room:updated', updatedRoom)
+        }
+      } catch (error) {
+        socket.emit('error', `Failed to start game: ${error}`)
       }
-      
-    } catch (error) {
-      socket.emit('error', `Failed to start game: ${error}`)
-    }
+    })
   })
 
   // Handle game actions
-  socket.on('game:action', async (roomId: string, action) => {
-    try {
-      const gameState = await gameManager.processAction(roomId, action)
-      io.to(roomId).emit('game:updated', gameState)
-      
-      // Get updated room with player hands and emit room update
-      const updatedRoom = roomManager.getRoom(roomId)
-      if (updatedRoom) {
-        io.to(roomId).emit('room:updated', updatedRoom)
+  socket.on('game:action', (roomId: string, action) => {
+    enqueueRoomGameOp(roomId, async () => {
+      try {
+        const gameState = await gameManager.processAction(roomId, action)
+        io.to(roomId).emit('game:updated', gameState)
+
+        const updatedRoom = roomManager.getRoom(roomId)
+        if (updatedRoom) {
+          io.to(roomId).emit('room:updated', updatedRoom)
+        }
+
+        const winner = gameManager.checkGameEnd(roomId)
+        if (winner) {
+          io.to(roomId).emit('game:ended', winner)
+        }
+      } catch (error) {
+        socket.emit('error', `Failed to process action: ${error}`)
       }
-      
-      // Check for game end
-      const winner = gameManager.checkGameEnd(roomId)
-      if (winner) {
-        io.to(roomId).emit('game:ended', winner)
-      }
-      
-    } catch (error) {
-      socket.emit('error', `Failed to process action: ${error}`)
-    }
+    })
   })
 
   // Player ready status
@@ -280,9 +291,9 @@ io.on('connection', (socket) => {
     console.log(`🚪🚪🚪 User disconnected: ${socket.id} 🚪🚪🚪`)
     console.log(`📊 Rooms before disconnect: ${roomsBefore}`, roomsBeforeDetails)
     
-    // Remove player from all rooms
-    roomManager.removePlayerFromAllRooms(socket.id)
-    
+    const emptiedRoomIds = roomManager.removePlayerFromAllRooms(socket.id)
+    emptiedRoomIds.forEach((rid) => gameManager.removeGameState(rid))
+
     const roomsAfter = roomManager.getAllRooms().length
     const roomsAfterDetails = roomManager.getAllRooms().map(r => ({ id: r.id, name: r.name, players: r.playerCount }))
     console.log(`📊 Rooms after disconnect: ${roomsAfter}`, roomsAfterDetails)

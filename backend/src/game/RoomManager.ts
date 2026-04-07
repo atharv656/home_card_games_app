@@ -62,28 +62,22 @@ export class RoomManager {
     return room
   }
 
-  async leaveRoom(roomId: string, playerId: string): Promise<void> {
+  /** @returns true if the room was removed (last player left). */
+  async leaveRoom(roomId: string, playerId: string): Promise<boolean> {
     const room = this.rooms.get(roomId)
     if (!room) {
       throw new Error('Room not found')
     }
 
     room.players = room.players.filter(p => p.id !== playerId)
-    
-    // Keep empty rooms for 5 minutes instead of immediately deleting
+
     if (room.players.length === 0) {
-      console.log(`⏰ Room ${roomId} is now empty, will be cleaned up in 5 minutes`)
-      // Schedule room cleanup after 5 minutes of being empty
-      setTimeout(() => {
-        const currentRoom = this.rooms.get(roomId)
-        if (currentRoom && currentRoom.players.length === 0) {
-          console.log(`🗑️ Cleaning up empty room ${roomId} after timeout`)
-          this.rooms.delete(roomId)
-        }
-      }, 5 * 60 * 1000) // 5 minutes
+      this.rooms.delete(roomId)
+      return true
     }
-    
+
     this.rooms.set(roomId, room)
+    return false
   }
 
   async setPlayerReady(roomId: string, playerId: string, isReady: boolean): Promise<GameRoom> {
@@ -108,43 +102,41 @@ export class RoomManager {
   }
 
   getAllRooms(): RoomListItem[] {
-    return Array.from(this.rooms.values()).map(room => ({
-      id: room.id,
-      name: room.name,
-      gameType: room.gameType,
-      playerCount: room.players.length,
-      maxPlayers: room.maxPlayers,
-      isStarted: room.isStarted,
-      isPrivate: room.isPrivate,
-    }))
+    return Array.from(this.rooms.values())
+      .filter((room) => room.players.length > 0)
+      .map((room) => ({
+        id: room.id,
+        name: room.name,
+        gameType: room.gameType,
+        playerCount: room.players.length,
+        maxPlayers: room.maxPlayers,
+        isStarted: room.isStarted,
+        isPrivate: room.isPrivate,
+      }))
   }
 
   getPublicRooms(): RoomListItem[] {
     return this.getAllRooms().filter(room => !room.isPrivate)
   }
 
-  removePlayerFromAllRooms(playerId: string): void {
-    for (const [roomId, room] of this.rooms.entries()) {
-      const playerIndex = room.players.findIndex(p => p.id === playerId)
-      if (playerIndex !== -1) {
-        room.players.splice(playerIndex, 1)
-        
-        // Keep empty rooms for 5 minutes instead of immediately deleting
-        if (room.players.length === 0) {
-          console.log(`⏰ Room ${roomId} is now empty after player disconnect, will be cleaned up in 5 minutes`)
-          // Schedule room cleanup after 5 minutes of being empty
-          setTimeout(() => {
-            const currentRoom = this.rooms.get(roomId)
-            if (currentRoom && currentRoom.players.length === 0) {
-              console.log(`🗑️ Cleaning up empty room ${roomId} after timeout`)
-              this.rooms.delete(roomId)
-            }
-          }, 5 * 60 * 1000) // 5 minutes
-        }
-        
+  /** Room IDs that were deleted because they became empty. */
+  removePlayerFromAllRooms(playerId: string): string[] {
+    const deleted: string[] = []
+    const roomIds = Array.from(this.rooms.keys())
+    for (const roomId of roomIds) {
+      const room = this.rooms.get(roomId)
+      if (!room) continue
+      const playerIndex = room.players.findIndex((p) => p.id === playerId)
+      if (playerIndex === -1) continue
+      room.players.splice(playerIndex, 1)
+      if (room.players.length === 0) {
+        this.rooms.delete(roomId)
+        deleted.push(roomId)
+      } else {
         this.rooms.set(roomId, room)
       }
     }
+    return deleted
   }
 
   canStartGame(roomId: string): boolean {

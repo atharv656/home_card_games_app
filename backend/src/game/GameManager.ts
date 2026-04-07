@@ -20,6 +20,10 @@ export class GameManager {
   
   constructor(private roomManager: RoomManager) {}
 
+  removeGameState(roomId: string): void {
+    this.gameStates.delete(roomId)
+  }
+
   async startGame(roomId: string, initiatorId: string): Promise<GameState> {
     const room = this.roomManager.getRoom(roomId)
     if (!room) {
@@ -1239,6 +1243,7 @@ export class GameManager {
       const deck = this.createDeck()
       const shuffledDeck = this.shuffleDeck(deck)
       const newGameState = this.initializeThreeOhFourGame(gameState.gameData.roomId, room.players, shuffledDeck)
+      newGameState.round = (gameState.round ?? 0) + 1
 
       this.roomManager.updateRoom(gameState.gameData.roomId, room)
       this.gameStates.set(gameState.gameData.roomId, newGameState)
