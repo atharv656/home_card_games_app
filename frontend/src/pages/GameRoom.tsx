@@ -36,6 +36,8 @@ const GameRoom: React.FC = () => {
   const [marriageSuitSelection, setMarriageSuitSelection] = useState<Suit[]>([])
   /** In-page celebration when server emits game:ended (War / Speed); cleared on new game */
   const [matchWinnerCelebration, setMatchWinnerCelebration] = useState<{ winnerName: string } | null>(null)
+  /** 304: show panel for the most recently completed trick (empty on first trick) */
+  const [showLastTrickLookback, setShowLastTrickLookback] = useState(true)
 
   const isWarGame = currentRoom?.gameType === 'war'
   const isSpeedGame = currentRoom?.gameType === 'speed'
@@ -295,6 +297,17 @@ const GameRoom: React.FC = () => {
       setPartnerRank(null)
     }
   }, [threeOhFourData?.gamePhase])
+
+  // Drop suits from the pending selection once they appear in marriageLog (declared)
+  useEffect(() => {
+    const log = threeOhFourData?.marriageLog
+    if (!log?.length) return
+    const declared = new Set(log.map((e) => e.suit))
+    setMarriageSuitSelection((prev) => {
+      const next = prev.filter((s) => !declared.has(s))
+      return next.length === prev.length ? prev : next
+    })
+  }, [threeOhFourData?.marriageLog])
 
   const handlePass = () => {
     if (socket && roomId && currentPlayer) {
@@ -820,6 +833,14 @@ const GameRoom: React.FC = () => {
 
     const myPlayer = getMyPlayer()
 
+    const lastCompletedTrick =
+      threeOhFourData.trickHistory?.length
+        ? threeOhFourData.trickHistory[threeOhFourData.trickHistory.length - 1]
+        : null
+    const lastTrickWinnerName = threeOhFourData.currentTrickWinner
+      ? currentRoom?.players?.find((p) => p.id === threeOhFourData.currentTrickWinner)?.name
+      : undefined
+
     return (
       <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 mb-3">
         <div className="game-table rounded-xl p-8">
@@ -1058,6 +1079,51 @@ const GameRoom: React.FC = () => {
                 </div>
               )}
 
+              {/* Last completed trick (lookback) — hidden until at least one trick has finished */}
+              {lastCompletedTrick && lastCompletedTrick.length > 0 && (
+                <div className="mb-4 rounded-lg border border-white/20 bg-black/20 p-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowLastTrickLookback((v) => !v)}
+                    className="flex w-full items-center justify-between text-left text-white font-semibold text-sm mb-2 hover:text-teal-200"
+                  >
+                    <span>Last trick (lookback)</span>
+                    <span className="text-teal-300">{showLastTrickLookback ? '▼' : '▶'}</span>
+                  </button>
+                  {showLastTrickLookback && (
+                    <>
+                      {lastTrickWinnerName && (
+                        <div className="text-center text-amber-200 text-sm mb-3">
+                          Won by <span className="font-semibold">{lastTrickWinnerName}</span>
+                        </div>
+                      )}
+                      <div className="flex flex-wrap justify-center gap-3">
+                        {lastCompletedTrick.map((card, index) => {
+                          const pid = (card as CardType & { playerId?: string }).playerId
+                          const pname = pid
+                            ? currentRoom?.players?.find((p) => p.id === pid)?.name ?? '—'
+                            : '—'
+                          return (
+                            <div key={`${card.id}-${index}`} className="flex flex-col items-center gap-1">
+                              <div className="scale-[0.72] origin-top">
+                                <Card
+                                  card={{ ...card, faceUp: true }}
+                                  isDraggable={false}
+                                  isPlayable={false}
+                                />
+                              </div>
+                              <span className="text-[11px] text-teal-200/90 max-w-[5rem] truncate text-center">
+                                {pname}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               {/* Player Turn Indicator */}
               {threeOhFourData.pendingMarriagePlayerIds?.includes(myPlayer?.id || '') &&
                 threeOhFourData.currentTrick.length === 0 &&
@@ -1065,18 +1131,32 @@ const GameRoom: React.FC = () => {
                   <div className="mb-4 p-3 rounded-lg bg-white/10 text-left max-w-md mx-auto">
                     <div className="text-white font-semibold text-sm mb-2">Declare marriages (optional)</div>
                     <div className="text-teal-200 text-xs mb-2">
-                      Only if <span className="font-semibold">your team won the last trick</span>. Trump K+Q = 40 pts;
-                      other suits = 20 each. You must still hold both K and Q. If you <span className="font-semibold">played</span> K or Q of a suit on that trick, you cannot claim that suit&apos;s marriage. After the last trick, use &quot;End hand&quot; when done.
+                      Only if <span className="font-semibold">your team won the last trick</span>. Trump K+Q ={' '}
+                      <span className="font-semibold">40</span> contract pts; each other suit ={' '}
+                      <span className="font-semibold">20</span>. Trump this hand:{' '}
+                      <span className="font-semibold text-amber-200">
+                        {threeOhFourData.trumpSuit
+                          ? `${threeOhFourData.trumpSuit} (+40 if you declare K+Q here)`
+                          : '—'}
+                      </span>
+                      . You must still hold both K and Q. If you <span className="font-semibold">played</span> K or Q
+                      of a suit on that trick, you cannot claim that suit&apos;s marriage. After the last trick, use
+                      &quot;End hand&quot; when done.
                     </div>
                     <div className="flex flex-wrap gap-2 justify-center mb-2">
                       {(['spades', 'hearts', 'diamonds', 'clubs'] as const).map((suit) => {
                         const broken =
                           myPlayer?.id &&
                           threeOhFourData.marriageBrokenSuitsThisRound?.[myPlayer.id]?.includes(suit)
+                        const alreadyDeclared = Boolean(
+                          threeOhFourData.marriageLog?.some((e) => e.suit === suit)
+                        )
                         const hasK = myPlayer?.hand?.some((c) => c.suit === suit && c.rank === 'K')
                         const hasQ = myPlayer?.hand?.some((c) => c.suit === suit && c.rank === 'Q')
-                        const eligible = hasK && hasQ && !broken
+                        const eligible = hasK && hasQ && !broken && !alreadyDeclared
                         const selected = marriageSuitSelection.includes(suit)
+                        const isTrumpSuit = threeOhFourData.trumpSuit === suit
+                        const marriagePts = isTrumpSuit ? 40 : 20
                         return (
                           <button
                             key={suit}
@@ -1095,12 +1175,29 @@ const GameRoom: React.FC = () => {
                                   : 'bg-gray-600 text-white hover:bg-gray-500'
                             }`}
                           >
-                            {suit}{' '}
-                            {broken ? '(played K/Q)' : !hasK || !hasQ ? '(no KQ)' : ''}
+                            {suit} (+{marriagePts}){isTrumpSuit ? ' (trump)' : ''}
+                            {alreadyDeclared
+                              ? ' (declared)'
+                              : broken
+                                ? ' (played K/Q)'
+                                : !hasK || !hasQ
+                                  ? ' (no KQ)'
+                                  : ''}
                           </button>
                         )
                       })}
                     </div>
+                    {threeOhFourData.marriageLog && threeOhFourData.marriageLog.length > 0 && (
+                      <div className="text-xs text-purple-200/95 mb-2 text-center">
+                        Declared this hand:{' '}
+                        {threeOhFourData.marriageLog.map((e, i) => (
+                          <span key={`${e.playerId}-${e.suit}-${i}`}>
+                            {e.suit} +{e.points}
+                            {i < threeOhFourData.marriageLog!.length - 1 ? ' · ' : ''}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={handleDeclareMarriages}

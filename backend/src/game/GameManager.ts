@@ -782,12 +782,12 @@ export class GameManager {
       throw new Error('Only the bid winner can select trump')
     }
 
-    // Validate trump suit
-    if (!['spades', 'hearts', 'diamonds', 'clubs'].includes(trumpSuit)) {
+    const normalized = this.normalize304Suit(trumpSuit)
+    if (!normalized) {
       throw new Error('Invalid trump suit')
     }
 
-    threeOhFourData.trumpSuit = trumpSuit as any
+    threeOhFourData.trumpSuit = normalized
     threeOhFourData.gamePhase = 'partner_selection'
     
     console.log(`${playerId} selected ${trumpSuit} as trump`)
@@ -1108,15 +1108,23 @@ export class GameManager {
     const player = room.players.find((p: Player) => p.id === playerId)
     if (!player) throw new Error('Player not found')
 
-    const trump = d.trumpSuit
+    const trumpNorm = this.normalize304Suit(d.trumpSuit)
     let totalValue = 0
     const seen = new Set<Suit>()
 
-    for (const suit of suits) {
+    for (const suitRaw of suits) {
+      const suit = this.normalize304Suit(suitRaw)
+      if (!suit) {
+        throw new Error(`Invalid suit in marriage declaration: ${String(suitRaw)}`)
+      }
       if (seen.has(suit)) {
         throw new Error(`Duplicate suit in declaration: ${suit}`)
       }
       seen.add(suit)
+
+      if (d.marriageLog.some((e) => e.suit === suit)) {
+        throw new Error(`Marriage for ${suit} was already declared this hand`)
+      }
 
       const broken = d.marriageBrokenSuitsThisRound[playerId] || []
       if (broken.includes(suit)) {
@@ -1130,7 +1138,7 @@ export class GameManager {
       if (!hasK || !hasQ) {
         throw new Error(`You need K and Q of ${suit} in hand to declare that marriage`)
       }
-      const pts = suit === trump ? 40 : 20
+      const pts = trumpNorm !== null && suit === trumpNorm ? 40 : 20
       totalValue += pts
       d.marriageLog.push({ playerId, suit, points: pts })
     }
@@ -1481,6 +1489,16 @@ export class GameManager {
     const tb = this.get304TrickStrength(b.rank)
     if (ta !== tb) return ta - tb
     return this.getSuitValue(a.suit) - this.getSuitValue(b.suit)
+  }
+
+  /** Canonicalize suit strings so marriage/trump checks are stable over the wire. */
+  private normalize304Suit(raw: unknown): Suit | null {
+    if (raw == null || typeof raw !== 'string') return null
+    const s = raw.trim().toLowerCase()
+    if (s === 'hearts' || s === 'diamonds' || s === 'clubs' || s === 'spades') {
+      return s
+    }
+    return null
   }
 
   private determine304TrickWinner(trick: Card[], trumpSuit: Suit | null): string {
