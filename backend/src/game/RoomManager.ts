@@ -1,8 +1,16 @@
 import { v4 as uuidv4 } from 'uuid'
 import type { GameRoom, Player, GameType, RoomListItem } from '../../../shared/types'
 
+/** How long to keep a disconnected player's seat before dropping them (ms). */
+const DISCONNECT_GRACE_MS = 600_000 // 10 minutes
+
 export class RoomManager {
   private rooms: Map<string, GameRoom> = new Map()
+  /** rejoinToken -> { roomId, socketId } */
+  private rejoinByToken = new Map<string, { roomId: string; socketId: string }>()
+  /** socketId -> rejoinToken */
+  private socketToToken = new Map<string, string>()
+  private disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   async createRoom(roomConfig: Partial<GameRoom>): Promise<GameRoom> {
     const roomId = uuidv4()
@@ -28,7 +36,11 @@ export class RoomManager {
     return room
   }
 
-  async joinRoom(roomId: string, playerId: string, playerName: string): Promise<GameRoom> {
+  async joinRoom(
+    roomId: string,
+    playerId: string,
+    playerName: string
+  ): Promise<{ room: GameRoom; rejoinToken: string }> {
     console.log(`RoomManager: joinRoom called - roomId: ${roomId}, playerId: ${playerId}, playerName: ${playerName}`)
     const room = this.rooms.get(roomId)
     if (!room) {
@@ -39,11 +51,13 @@ export class RoomManager {
       throw new Error('Room is full')
     }
 
-    // If player is already in room, just return the room (no error)
-    const existingPlayer = room.players.find(p => p.id === playerId)
+    const existingPlayer = room.players.find((p) => p.id === playerId)
     if (existingPlayer) {
-      console.log(`RoomManager: Player ${playerId} already in room, returning existing room with ${room.players.length} players`)
-      return room
+      console.log(
+        `RoomManager: Player ${playerId} already in room, returning existing room with ${room.players.length} players`
+      )
+      const rejoinToken = this.ensureRejoinToken(roomId, playerId)
+      return { room, rejoinToken }
     }
 
     const player: Player = {
@@ -59,17 +73,91 @@ export class RoomManager {
     this.rooms.set(roomId, room)
     console.log(`RoomManager: Added player ${playerId} to room ${roomId}, room now has ${room.players.length} players`)
 
-    return room
+    const rejoinToken = this.bindRejoinToken(roomId, playerId)
+    return { room, rejoinToken }
+  }
+
+  /**
+   * Restore a disconnected player's seat using a secret token (new socket id).
+   */
+  rejoinRoom(roomId: string, newSocketId: string, token: string): { room: GameRoom; previousSocketId: string } {
+    const sess = this.rejoinByToken.get(token)
+    if (!sess || sess.roomId !== roomId) {
+      throw new Error('[rejoin] Invalid or expired rejoin token')
+    }
+    const room = this.rooms.get(roomId)
+    if (!room) {
+      this.rejoinByToken.delete(token)
+      throw new Error('[rejoin] Room not found')
+    }
+    const player = room.players.find((p) => p.id === sess.socketId)
+    if (!player) {
+      this.rejoinByToken.delete(token)
+      throw new Error('[rejoin] Seat no longer available — join as a new player')
+    }
+
+    this.cancelDisconnectRemoval(sess.socketId)
+
+    const oldId = sess.socketId
+    player.id = newSocketId
+    this.rejoinByToken.set(token, { roomId, socketId: newSocketId })
+    this.socketToToken.delete(oldId)
+    this.socketToToken.set(newSocketId, token)
+    this.rooms.set(roomId, room)
+
+    return { room, previousSocketId: oldId }
+  }
+
+  private bindRejoinToken(roomId: string, socketId: string): string {
+    const existing = this.socketToToken.get(socketId)
+    if (existing) return existing
+    const token = uuidv4()
+    this.rejoinByToken.set(token, { roomId, socketId })
+    this.socketToToken.set(socketId, token)
+    return token
+  }
+
+  private ensureRejoinToken(roomId: string, socketId: string): string {
+    return this.socketToToken.get(socketId) ?? this.bindRejoinToken(roomId, socketId)
+  }
+
+  revokeRejoinForSocket(socketId: string): void {
+    this.cancelDisconnectRemoval(socketId)
+    const token = this.socketToToken.get(socketId)
+    if (token) {
+      this.rejoinByToken.delete(token)
+      this.socketToToken.delete(socketId)
+    }
+  }
+
+  cancelDisconnectRemoval(socketId: string): void {
+    const t = this.disconnectTimers.get(socketId)
+    if (t) {
+      clearTimeout(t)
+      this.disconnectTimers.delete(socketId)
+    }
+  }
+
+  /** Call on socket disconnect: remove player after grace period unless they rejoin with a token. */
+  scheduleDisconnectRemoval(socketId: string, onRemove: () => void): void {
+    this.cancelDisconnectRemoval(socketId)
+    const t = setTimeout(() => {
+      this.disconnectTimers.delete(socketId)
+      onRemove()
+    }, DISCONNECT_GRACE_MS)
+    this.disconnectTimers.set(socketId, t)
   }
 
   /** @returns true if the room was removed (last player left). */
   async leaveRoom(roomId: string, playerId: string): Promise<boolean> {
+    this.revokeRejoinForSocket(playerId)
+
     const room = this.rooms.get(roomId)
     if (!room) {
       throw new Error('Room not found')
     }
 
-    room.players = room.players.filter(p => p.id !== playerId)
+    room.players = room.players.filter((p) => p.id !== playerId)
 
     if (room.players.length === 0) {
       this.rooms.delete(roomId)
@@ -86,7 +174,7 @@ export class RoomManager {
       throw new Error('Room not found')
     }
 
-    const player = room.players.find(p => p.id === playerId)
+    const player = room.players.find((p) => p.id === playerId)
     if (!player) {
       throw new Error('Player not found in room')
     }
@@ -99,6 +187,15 @@ export class RoomManager {
 
   getRoom(roomId: string): GameRoom | undefined {
     return this.rooms.get(roomId)
+  }
+
+  /** Rooms where this socket id is still listed as a player (used before purge on disconnect). */
+  getRoomIdsContainingPlayer(playerId: string): string[] {
+    const ids: string[] = []
+    for (const [rid, room] of this.rooms) {
+      if (room.players.some((p) => p.id === playerId)) ids.push(rid)
+    }
+    return ids
   }
 
   getAllRooms(): RoomListItem[] {
@@ -116,11 +213,13 @@ export class RoomManager {
   }
 
   getPublicRooms(): RoomListItem[] {
-    return this.getAllRooms().filter(room => !room.isPrivate)
+    return this.getAllRooms().filter((room) => !room.isPrivate)
   }
 
   /** Room IDs that were deleted because they became empty. */
   removePlayerFromAllRooms(playerId: string): string[] {
+    this.revokeRejoinForSocket(playerId)
+
     const deleted: string[] = []
     const roomIds = Array.from(this.rooms.keys())
     for (const roomId of roomIds) {
@@ -145,10 +244,11 @@ export class RoomManager {
       return false
     }
 
-    // Check if room has enough players and all are ready
-    return room.players.length >= 2 && 
-           room.players.every(p => p.isReady) &&
-           !room.isStarted
+    return (
+      room.players.length >= 2 &&
+      room.players.every((p) => p.isReady) &&
+      !room.isStarted
+    )
   }
 
   startGame(roomId: string): GameRoom {
@@ -162,7 +262,7 @@ export class RoomManager {
     }
 
     room.isStarted = true
-    room.players.forEach(player => {
+    room.players.forEach((player) => {
       player.isActive = true
     })
 
@@ -173,4 +273,4 @@ export class RoomManager {
   updateRoom(roomId: string, updatedRoom: GameRoom): void {
     this.rooms.set(roomId, updatedRoom)
   }
-} 
+}
