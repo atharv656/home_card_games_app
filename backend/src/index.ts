@@ -104,7 +104,7 @@ app.post('/api/test-create-room', async (req, res) => {
     
     // Simulate adding a player
     const testPlayerId = 'http-test-player'
-    const updatedRoom = await roomManager.joinRoom(room.id, testPlayerId, 'HTTP Test Player')
+    const { room: updatedRoom } = await roomManager.joinRoom(room.id, testPlayerId, 'HTTP Test Player')
     
     const allRooms = roomManager.getAllRooms()
     console.log(`✅ HTTP Test room created: ${room.id} with ${updatedRoom.players.length} players`)
@@ -147,21 +147,38 @@ io.on('connection', (socket) => {
   socket.on('room:join', async (roomId: string, playerName: string) => {
     try {
       console.log(`Socket ${socket.id} attempting to join room ${roomId} as ${playerName}`)
-      const room = await roomManager.joinRoom(roomId, socket.id, playerName)
+      const { room, rejoinToken } = await roomManager.joinRoom(roomId, socket.id, playerName)
       socket.join(roomId)
-      
-      // Send room info to the player
+
+      socket.emit('rejoin:issued', { roomId, rejoinToken })
       socket.emit('room:joined', room)
-      
-      // Notify other players in the room
+
       socket.to(roomId).emit('player:joined', room.players.find(p => p.id === socket.id)!)
-      
-      // Send updated room info to all players
+
       io.to(roomId).emit('room:updated', room)
-      
     } catch (error) {
       console.error(`Failed to join room ${roomId}:`, error)
       socket.emit('error', `Failed to join room: ${error}`)
+    }
+  })
+
+  // Rejoin after disconnect / refresh (keeps seat during grace window; updates socket id)
+  socket.on('room:rejoin', (roomId: string, rejoinToken: string) => {
+    try {
+      const { room, previousSocketId } = roomManager.rejoinRoom(roomId, socket.id, rejoinToken)
+      gameManager.replacePlayerSocketId(roomId, previousSocketId, socket.id)
+      socket.join(roomId)
+      socket.emit('rejoin:issued', { roomId, rejoinToken })
+      socket.emit('room:joined', room)
+      socket.to(roomId).emit('player:left', previousSocketId)
+      io.to(roomId).emit('room:updated', room)
+      const gs = gameManager.getGameState(roomId)
+      if (gs) {
+        io.to(roomId).emit('game:updated', gs)
+      }
+    } catch (error) {
+      console.error(`room:rejoin failed for ${roomId}:`, error)
+      socket.emit('error', error instanceof Error ? error.message : String(error))
     }
   })
 
@@ -200,15 +217,15 @@ io.on('connection', (socket) => {
       
       // Add creator as a player to the room
       const playerName = roomConfig.playerName || 'Player'
-      const updatedRoom = await roomManager.joinRoom(room.id, socket.id, playerName)
+      const { room: updatedRoom, rejoinToken } = await roomManager.joinRoom(room.id, socket.id, playerName)
       const totalRooms = roomManager.getAllRooms().length
-      console.log('👤 Creator added to room:', { id: updatedRoom.id, name: updatedRoom.name, playersCount: updatedRoom.players.length, players: updatedRoom.players.map(p => ({ id: p.id, name: p.name })) })
+      console.log('👤 Creator added to room:', { id: updatedRoom.id, name: updatedRoom.name, playersCount: updatedRoom.players.length, players: updatedRoom.players.map((p) => ({ id: p.id, name: p.name })) })
       console.log(`📊 Total rooms in system: ${totalRooms}`)
       
       // Join the socket to the room BEFORE emitting events
       socket.join(room.id)
-      
-      // Send room info to the creator (with creator included)
+
+      socket.emit('rejoin:issued', { roomId: room.id, rejoinToken })
       console.log('Emitting room:joined with room containing creator')
       socket.emit('room:joined', updatedRoom)
       
@@ -284,24 +301,30 @@ io.on('connection', (socket) => {
     }
   })
 
-  // Handle disconnection
+  // Handle disconnection — grace period so rejoin token / refresh can recover the seat
   socket.on('disconnect', () => {
     const roomsBefore = roomManager.getAllRooms().length
     const roomsBeforeDetails = roomManager.getAllRooms().map(r => ({ id: r.id, name: r.name, players: r.playerCount }))
     console.log(`🚪🚪🚪 User disconnected: ${socket.id} 🚪🚪🚪`)
     console.log(`📊 Rooms before disconnect: ${roomsBefore}`, roomsBeforeDetails)
-    
-    const emptiedRoomIds = roomManager.removePlayerFromAllRooms(socket.id)
-    emptiedRoomIds.forEach((rid) => gameManager.removeGameState(rid))
+
+    const disconnectedSocketId = socket.id
+    roomManager.scheduleDisconnectRemoval(disconnectedSocketId, () => {
+      const affectedRoomIds = roomManager.getRoomIdsContainingPlayer(disconnectedSocketId)
+      const emptiedRoomIds = roomManager.removePlayerFromAllRooms(disconnectedSocketId)
+      emptiedRoomIds.forEach((rid) => gameManager.removeGameState(rid))
+      for (const rid of affectedRoomIds) {
+        io.to(rid).emit('player:left', disconnectedSocketId)
+        const r = roomManager.getRoom(rid)
+        if (r) io.to(rid).emit('room:updated', r)
+      }
+      console.log(`📊 Rooms after delayed disconnect purge: ${roomManager.getAllRooms().length}`)
+    })
 
     const roomsAfter = roomManager.getAllRooms().length
     const roomsAfterDetails = roomManager.getAllRooms().map(r => ({ id: r.id, name: r.name, players: r.playerCount }))
-    console.log(`📊 Rooms after disconnect: ${roomsAfter}`, roomsAfterDetails)
-    console.log(`🚪🚪🚪 DISCONNECT PROCESSING COMPLETE 🚪🚪🚪`)
-    
-    // Notify other players in affected rooms
-    // This is a simplified version - in production, you'd want to track which rooms the player was in
-    socket.broadcast.emit('player:left', socket.id)
+    console.log(`📊 Rooms (grace — player still seated): ${roomsAfter}`, roomsAfterDetails)
+    console.log(`🚪🚪🚪 DISCONNECT SCHEDULED (grace) 🚪🚪🚪`)
   })
 })
 

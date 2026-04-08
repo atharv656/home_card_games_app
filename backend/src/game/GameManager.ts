@@ -15,6 +15,33 @@ import type {
 } from '../../../shared/types'
 import { RoomManager } from './RoomManager'
 
+/** Replace socket id in nested game payloads (player keys, id fields, trick card playerId, etc.). */
+function replacePlayerIdDeep(obj: unknown, oldId: string, newId: string): void {
+  if (obj === null || typeof obj !== 'object') return
+  if (Array.isArray(obj)) {
+    const arr = obj as unknown[]
+    for (let i = 0; i < arr.length; i++) {
+      if (arr[i] === oldId) arr[i] = newId
+      else replacePlayerIdDeep(arr[i], oldId, newId)
+    }
+    return
+  }
+  const o = obj as Record<string, unknown>
+  const keys = Object.keys(o)
+  for (const k of keys) {
+    if (k === oldId) {
+      const val = o[oldId]
+      delete o[oldId]
+      o[newId] = val
+      replacePlayerIdDeep(o[newId], oldId, newId)
+    } else {
+      const v = o[k]
+      if (v === oldId) o[k] = newId
+      else replacePlayerIdDeep(v, oldId, newId)
+    }
+  }
+}
+
 export class GameManager {
   private gameStates: Map<string, GameState> = new Map()
   
@@ -22,6 +49,32 @@ export class GameManager {
 
   removeGameState(roomId: string): void {
     this.gameStates.delete(roomId)
+  }
+
+  getGameState(roomId: string): GameState | undefined {
+    return this.gameStates.get(roomId)
+  }
+
+  /** After socket reconnect with new id, keep game state and room session keys consistent. */
+  replacePlayerSocketId(roomId: string, oldId: string, newId: string): void {
+    const room = this.roomManager.getRoom(roomId)
+    if (room) {
+      if (room.sessionScores304 && oldId in room.sessionScores304) {
+        room.sessionScores304[newId] = room.sessionScores304[oldId]!
+        delete room.sessionScores304[oldId]
+      }
+      const last = room.last304Hand
+      if (last?.awarded && oldId in last.awarded) {
+        last.awarded[newId] = last.awarded[oldId]!
+        delete last.awarded[oldId]
+      }
+      this.roomManager.updateRoom(roomId, room)
+    }
+    const gs = this.gameStates.get(roomId)
+    if (!gs) return
+    if (gs.currentPlayer === oldId) gs.currentPlayer = newId
+    replacePlayerIdDeep(gs.gameData, oldId, newId)
+    this.gameStates.set(roomId, gs)
   }
 
   async startGame(roomId: string, initiatorId: string): Promise<GameState> {

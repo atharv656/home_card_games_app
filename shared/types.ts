@@ -175,6 +175,8 @@ export interface ServerToClientEvents {
   'room:joined': (room: GameRoom) => void;
   'room:left': (playerId: string) => void;
   'room:updated': (room: GameRoom) => void;
+  /** Issued when you join a room — store client-side to call room:rejoin after refresh/reconnect. */
+  'rejoin:issued': (payload: { roomId: string; rejoinToken: string }) => void;
   'game:started': (gameState: GameState) => void;
   'game:updated': (gameState: GameState) => void;
   'game:ended': (winner: Player) => void;
@@ -186,6 +188,8 @@ export interface ServerToClientEvents {
 
 export interface ClientToServerEvents {
   'room:join': (roomId: string, playerName: string) => void;
+  /** Restore seat after disconnect (same as refresh with saved token). */
+  'room:rejoin': (roomId: string, rejoinToken: string) => void;
   'room:leave': (roomId: string) => void;
   'room:create': (roomConfig: Partial<GameRoom> & { playerName?: string }) => void;
   'game:start': (roomId: string) => void;

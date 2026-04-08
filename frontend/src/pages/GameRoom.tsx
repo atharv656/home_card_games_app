@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useSocket } from '../contexts/SocketContext'
 import { useGameState } from '../contexts/GameStateContext'
 import Card from '../components/Card'
 import Hand from '../components/Hand'
+import { saveRejoinSession, loadRejoinSession, clearRejoinSession } from '../lib/rejoinSession'
 
 // Import game data types from shared types
 import type { WarGameData, SpeedGameData, ThreeOhFourGameData, Card as CardType, Suit } from '../../../shared/types'
@@ -37,7 +38,9 @@ const GameRoom: React.FC = () => {
   /** In-page celebration when server emits game:ended (War / Speed); cleared on new game */
   const [matchWinnerCelebration, setMatchWinnerCelebration] = useState<{ winnerName: string } | null>(null)
   /** 304: show panel for the most recently completed trick (empty on first trick) */
-  const [showLastTrickLookback, setShowLastTrickLookback] = useState(true)
+  const [showLastTrickLookback, setShowLastTrickLookback] = useState(false)
+  /** Avoid duplicate room:join when both connect and setTimeout fire before rejoin token exists */
+  const initialJoinSentRef = useRef(false)
 
   const isWarGame = currentRoom?.gameType === 'war'
   const isSpeedGame = currentRoom?.gameType === 'speed'
@@ -52,20 +55,53 @@ const GameRoom: React.FC = () => {
       return
     }
 
-    // If we have room data from navigation, use it initially
+    initialJoinSentRef.current = false
+
     if (location.state?.roomData) {
       console.log('FRONTEND: Using room data from navigation:', location.state.roomData)
       setCurrentRoom(location.state.roomData)
     }
 
-    // Set up socket event listeners
     if (socket) {
+      const tryRejoinOrJoin = () => {
+        if (!socket.connected || !roomId) return
+        const stored = loadRejoinSession()
+        if (stored?.roomId === roomId && stored.rejoinToken) {
+          console.log('Attempting room:rejoin')
+          socket.emit('room:rejoin', roomId, stored.rejoinToken)
+          return
+        }
+        if (initialJoinSentRef.current) return
+        const roomData = location.state?.roomData
+        const isAlreadyInRoom = roomData?.players?.some((p: { id: string }) => p.id === socket.id)
+        if (isAlreadyInRoom) {
+          console.log('Already in room, skipping join attempt')
+          return
+        }
+        initialJoinSentRef.current = true
+        const playerName = location.state?.playerName || `Player_${Date.now()}`
+        console.log('Attempting to join room:', playerName)
+        socket.emit('room:join', roomId, playerName)
+      }
+
+      const onRejoinIssued = (payload: { roomId: string; rejoinToken: string }) => {
+        if (payload.roomId !== roomId) return
+        const playerName =
+          (location.state as { playerName?: string } | undefined)?.playerName || 'Player'
+        saveRejoinSession({
+          roomId: payload.roomId,
+          rejoinToken: payload.rejoinToken,
+          playerName,
+        })
+      }
+
+      socket.on('rejoin:issued', onRejoinIssued)
+
       socket.on('room:joined', (room) => {
         console.log('FRONTEND: Joined room via socket:', room)
         setCurrentRoom(room)
-        
-        // Set current player based on socket ID and sync ready state
-        const myPlayer = room.players.find(p => p.id === socket.id)
+
+        const myPlayer = room.players.find((p) => p.id === socket.id)
         if (myPlayer) {
           setCurrentPlayer(myPlayer)
           setIsReady(myPlayer.isReady)
@@ -75,9 +111,8 @@ const GameRoom: React.FC = () => {
       socket.on('room:updated', (room) => {
         console.log('Room updated:', room)
         setCurrentRoom(room)
-        
-        // Update current player information and sync ready state
-        const myPlayer = room.players.find(p => p.id === socket.id)
+
+        const myPlayer = room.players.find((p) => p.id === socket.id)
         if (myPlayer) {
           setCurrentPlayer(myPlayer)
           setIsReady(myPlayer.isReady)
@@ -120,14 +155,14 @@ const GameRoom: React.FC = () => {
           if (warGameData.battleResult === 'winner' && warGameData.lastBattleWinner) {
             setBattleResult({
               winner: warGameData.lastBattleWinner,
-              isWar: false
+              isWar: false,
             })
             setShowBattleResult(true)
           }
         } else if (gt === 'war' && gameStateData.phase === 'war') {
           setBattleResult({
             winner: null,
-            isWar: true
+            isWar: true,
           })
           setShowBattleResult(true)
         }
@@ -146,27 +181,23 @@ const GameRoom: React.FC = () => {
 
       socket.on('error', (error) => {
         console.error('Socket error:', error)
+        const msg = String(error)
+        if (msg.startsWith('[rejoin]')) {
+          clearRejoinSession()
+          initialJoinSentRef.current = false
+          const playerName = location.state?.playerName || `Player_${Date.now()}`
+          socket.emit('room:join', roomId, playerName)
+          return
+        }
         alert(`Error: ${error}`)
       })
 
-      // Only try to join if we don't have room data or we're not in the room
-      const timeoutId = setTimeout(() => {
-        const playerName = location.state?.playerName || `Player_${Date.now()}`
-        const roomData = location.state?.roomData
-        
-        // Check if we're already in the room
-        const isAlreadyInRoom = roomData?.players?.some((p: any) => p.id === socket.id)
-        
-        if (!isAlreadyInRoom) {
-          console.log('Attempting to join room:', playerName)
-          socket.emit('room:join', roomId, playerName)
-        } else {
-          console.log('Already in room, skipping join attempt')
-        }
-      }, 100) // Small delay to allow navigation state to be processed
+      const timeoutId = setTimeout(tryRejoinOrJoin, 100)
+      socket.on('connect', tryRejoinOrJoin)
 
       return () => {
         clearTimeout(timeoutId)
+        socket.off('rejoin:issued', onRejoinIssued)
         socket.off('room:joined')
         socket.off('room:updated')
         socket.off('game:started')
@@ -174,12 +205,11 @@ const GameRoom: React.FC = () => {
         socket.off('game:ended')
         socket.off('battle:result')
         socket.off('error')
+        socket.off('connect', tryRejoinOrJoin)
       }
     }
 
-    return () => {
-      // No cleanup needed if no socket
-    }
+    return () => {}
   }, [roomId, socket, navigate, location.state])
 
   const handleReady = () => {
@@ -197,6 +227,7 @@ const GameRoom: React.FC = () => {
   }
 
   const handleLeaveRoom = () => {
+    clearRejoinSession()
     if (socket && roomId) {
       socket.emit('room:leave', roomId)
     }
