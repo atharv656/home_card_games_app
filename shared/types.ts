@@ -211,4 +211,6 @@ export interface RoomListItem {
   maxPlayers: number;
   isStarted: boolean;
   isPrivate: boolean;
+  /** Seats held by disconnected sockets still in grace (can be reclaimed by matching name). */
+  disconnectedCount: number;
 } 

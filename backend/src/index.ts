@@ -147,13 +147,27 @@ io.on('connection', (socket) => {
   socket.on('room:join', async (roomId: string, playerName: string) => {
     try {
       console.log(`Socket ${socket.id} attempting to join room ${roomId} as ${playerName}`)
-      const { room, rejoinToken } = await roomManager.joinRoom(roomId, socket.id, playerName)
+      const { room, rejoinToken, previousSocketId } = await roomManager.joinRoom(roomId, socket.id, playerName)
+      if (previousSocketId) {
+        gameManager.replacePlayerSocketId(roomId, previousSocketId, socket.id)
+      }
       socket.join(roomId)
 
       socket.emit('rejoin:issued', { roomId, rejoinToken })
+      const gsJoin = gameManager.getGameState(roomId)
+      if (gsJoin) {
+        socket.emit('game:updated', gsJoin)
+        if (previousSocketId) {
+          io.to(roomId).emit('game:updated', gsJoin)
+        }
+      }
       socket.emit('room:joined', room)
 
-      socket.to(roomId).emit('player:joined', room.players.find(p => p.id === socket.id)!)
+      if (previousSocketId) {
+        socket.to(roomId).emit('player:left', previousSocketId)
+      } else {
+        socket.to(roomId).emit('player:joined', room.players.find(p => p.id === socket.id)!)
+      }
 
       io.to(roomId).emit('room:updated', room)
     } catch (error) {
@@ -168,11 +182,14 @@ io.on('connection', (socket) => {
       const { room, previousSocketId } = roomManager.rejoinRoom(roomId, socket.id, rejoinToken)
       gameManager.replacePlayerSocketId(roomId, previousSocketId, socket.id)
       socket.join(roomId)
+      const gs = gameManager.getGameState(roomId)
       socket.emit('rejoin:issued', { roomId, rejoinToken })
+      if (gs) {
+        socket.emit('game:updated', gs)
+      }
       socket.emit('room:joined', room)
       socket.to(roomId).emit('player:left', previousSocketId)
       io.to(roomId).emit('room:updated', room)
-      const gs = gameManager.getGameState(roomId)
       if (gs) {
         io.to(roomId).emit('game:updated', gs)
       }
@@ -309,6 +326,7 @@ io.on('connection', (socket) => {
     console.log(`📊 Rooms before disconnect: ${roomsBefore}`, roomsBeforeDetails)
 
     const disconnectedSocketId = socket.id
+    roomManager.markSocketDisconnected(disconnectedSocketId)
     roomManager.scheduleDisconnectRemoval(disconnectedSocketId, () => {
       const affectedRoomIds = roomManager.getRoomIdsContainingPlayer(disconnectedSocketId)
       const emptiedRoomIds = roomManager.removePlayerFromAllRooms(disconnectedSocketId)

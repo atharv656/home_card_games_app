@@ -5,6 +5,7 @@ import { useGameState } from '../contexts/GameStateContext'
 import Card from '../components/Card'
 import Hand from '../components/Hand'
 import { saveRejoinSession, loadRejoinSession, clearRejoinSession } from '../lib/rejoinSession'
+import { savePlayerName } from '../lib/playerName'
 
 // Import game data types from shared types
 import type { WarGameData, SpeedGameData, ThreeOhFourGameData, Card as CardType, Suit } from '../../../shared/types'
@@ -41,6 +42,8 @@ const GameRoom: React.FC = () => {
   const [showLastTrickLookback, setShowLastTrickLookback] = useState(false)
   /** Avoid duplicate room:join when both connect and setTimeout fire before rejoin token exists */
   const initialJoinSentRef = useRef(false)
+  /** After rejoin/join, next game:updated must replace client state (304 round guard can reject valid server snapshots). Set from rejoin:issued before game:updated. */
+  const skip304StaleGuardOnceRef = useRef(false)
 
   const isWarGame = currentRoom?.gameType === 'war'
   const isSpeedGame = currentRoom?.gameType === 'speed'
@@ -56,6 +59,7 @@ const GameRoom: React.FC = () => {
     }
 
     initialJoinSentRef.current = false
+    skip304StaleGuardOnceRef.current = false
 
     if (location.state?.roomData) {
       console.log('FRONTEND: Using room data from navigation:', location.state.roomData)
@@ -86,6 +90,7 @@ const GameRoom: React.FC = () => {
 
       const onRejoinIssued = (payload: { roomId: string; rejoinToken: string }) => {
         if (payload.roomId !== roomId) return
+        skip304StaleGuardOnceRef.current = true
         const playerName =
           (location.state as { playerName?: string } | undefined)?.playerName || 'Player'
         saveRejoinSession({
@@ -103,6 +108,7 @@ const GameRoom: React.FC = () => {
 
         const myPlayer = room.players.find((p) => p.id === socket.id)
         if (myPlayer) {
+          savePlayerName(myPlayer.name)
           setCurrentPlayer(myPlayer)
           setIsReady(myPlayer.isReady)
         }
@@ -129,6 +135,13 @@ const GameRoom: React.FC = () => {
       socket.on('game:updated', (gameStateData) => {
         console.log('Game updated:', gameStateData)
         setGameState((prev) => {
+          if (skip304StaleGuardOnceRef.current) {
+            skip304StaleGuardOnceRef.current = false
+            if (import.meta.env.DEV) {
+              console.info('[CardGame] Applied full game:updated after join/rejoin (skipped 304 stale guard)')
+            }
+            return gameStateData
+          }
           const gtNew = (gameStateData.gameData as { gameType?: string })?.gameType
           const gtPrev = (prev?.gameData as { gameType?: string })?.gameType
           if (gtNew === '304' && gtPrev === '304') {

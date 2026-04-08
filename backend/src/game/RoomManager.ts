@@ -4,6 +4,10 @@ import type { GameRoom, Player, GameType, RoomListItem } from '../../../shared/t
 /** How long to keep a disconnected player's seat before dropping them (ms). */
 const DISCONNECT_GRACE_MS = 600_000 // 10 minutes
 
+function normalizePlayerName(name: string): string {
+  return name.trim().toLowerCase()
+}
+
 export class RoomManager {
   private rooms: Map<string, GameRoom> = new Map()
   /** rejoinToken -> { roomId, socketId } */
@@ -11,6 +15,8 @@ export class RoomManager {
   /** socketId -> rejoinToken */
   private socketToToken = new Map<string, string>()
   private disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  /** Socket IDs still seated but disconnected (grace window); can reclaim seat with matching name. */
+  private disconnectedSocketIds = new Set<string>()
 
   async createRoom(roomConfig: Partial<GameRoom>): Promise<GameRoom> {
     const roomId = uuidv4()
@@ -40,15 +46,11 @@ export class RoomManager {
     roomId: string,
     playerId: string,
     playerName: string
-  ): Promise<{ room: GameRoom; rejoinToken: string }> {
+  ): Promise<{ room: GameRoom; rejoinToken: string; previousSocketId?: string }> {
     console.log(`RoomManager: joinRoom called - roomId: ${roomId}, playerId: ${playerId}, playerName: ${playerName}`)
     const room = this.rooms.get(roomId)
     if (!room) {
       throw new Error('Room not found')
-    }
-
-    if (room.players.length >= room.maxPlayers) {
-      throw new Error('Room is full')
     }
 
     const existingPlayer = room.players.find((p) => p.id === playerId)
@@ -58,6 +60,20 @@ export class RoomManager {
       )
       const rejoinToken = this.ensureRejoinToken(roomId, playerId)
       return { room, rejoinToken }
+    }
+
+    if (room.players.length >= room.maxPlayers) {
+      const claimed = this.claimDisconnectedSeat(roomId, playerId, playerName)
+      if (claimed) {
+        return claimed
+      }
+      const hasDisconnectedSeat = room.players.some((p) => this.disconnectedSocketIds.has(p.id))
+      if (hasDisconnectedSeat) {
+        throw new Error(
+          'Room is full — use the exact same name as your disconnected seat to reclaim it (case-insensitive)'
+        )
+      }
+      throw new Error('Room is full')
     }
 
     const player: Player = {
@@ -75,6 +91,50 @@ export class RoomManager {
 
     const rejoinToken = this.bindRejoinToken(roomId, playerId)
     return { room, rejoinToken }
+  }
+
+  /**
+   * If the room is full but a seated player is disconnected (grace), hand their seat to this socket
+   * when the display name matches (case-insensitive). Insecure by design — no password.
+   */
+  private claimDisconnectedSeat(
+    roomId: string,
+    newSocketId: string,
+    playerName: string
+  ): { room: GameRoom; rejoinToken: string; previousSocketId: string } | null {
+    const room = this.rooms.get(roomId)
+    if (!room) return null
+    const norm = normalizePlayerName(playerName)
+    if (!norm) return null
+
+    const target = room.players.find(
+      (p) => this.disconnectedSocketIds.has(p.id) && normalizePlayerName(p.name) === norm
+    )
+    if (!target) return null
+
+    const oldId = target.id
+    this.revokeRejoinForSocket(oldId)
+    this.cancelDisconnectRemoval(oldId)
+    this.disconnectedSocketIds.delete(oldId)
+
+    target.id = newSocketId
+    this.rooms.set(roomId, room)
+
+    const rejoinToken = this.bindRejoinToken(roomId, newSocketId)
+    console.log(
+      `RoomManager: Claimed disconnected seat ${oldId} -> ${newSocketId} in ${roomId} by name "${playerName}"`
+    )
+    return { room, rejoinToken, previousSocketId: oldId }
+  }
+
+  /** Mark socket as disconnected but still seated (grace). Call from socket disconnect handler. */
+  markSocketDisconnected(socketId: string): void {
+    for (const room of this.rooms.values()) {
+      if (room.players.some((p) => p.id === socketId)) {
+        this.disconnectedSocketIds.add(socketId)
+        return
+      }
+    }
   }
 
   /**
@@ -100,6 +160,7 @@ export class RoomManager {
 
     const oldId = sess.socketId
     player.id = newSocketId
+    this.disconnectedSocketIds.delete(oldId)
     this.rejoinByToken.set(token, { roomId, socketId: newSocketId })
     this.socketToToken.delete(oldId)
     this.socketToToken.set(newSocketId, token)
@@ -151,6 +212,7 @@ export class RoomManager {
   /** @returns true if the room was removed (last player left). */
   async leaveRoom(roomId: string, playerId: string): Promise<boolean> {
     this.revokeRejoinForSocket(playerId)
+    this.disconnectedSocketIds.delete(playerId)
 
     const room = this.rooms.get(roomId)
     if (!room) {
@@ -201,15 +263,22 @@ export class RoomManager {
   getAllRooms(): RoomListItem[] {
     return Array.from(this.rooms.values())
       .filter((room) => room.players.length > 0)
-      .map((room) => ({
-        id: room.id,
-        name: room.name,
-        gameType: room.gameType,
-        playerCount: room.players.length,
-        maxPlayers: room.maxPlayers,
-        isStarted: room.isStarted,
-        isPrivate: room.isPrivate,
-      }))
+      .map((room) => {
+        let disconnectedCount = 0
+        for (const p of room.players) {
+          if (this.disconnectedSocketIds.has(p.id)) disconnectedCount++
+        }
+        return {
+          id: room.id,
+          name: room.name,
+          gameType: room.gameType,
+          playerCount: room.players.length,
+          maxPlayers: room.maxPlayers,
+          isStarted: room.isStarted,
+          isPrivate: room.isPrivate,
+          disconnectedCount,
+        }
+      })
   }
 
   getPublicRooms(): RoomListItem[] {
@@ -219,6 +288,7 @@ export class RoomManager {
   /** Room IDs that were deleted because they became empty. */
   removePlayerFromAllRooms(playerId: string): string[] {
     this.revokeRejoinForSocket(playerId)
+    this.disconnectedSocketIds.delete(playerId)
 
     const deleted: string[] = []
     const roomIds = Array.from(this.rooms.keys())

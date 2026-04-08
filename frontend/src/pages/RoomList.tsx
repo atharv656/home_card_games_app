@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useSocket } from '../contexts/SocketContext'
+import { loadPlayerName, savePlayerName } from '../lib/playerName'
 
 interface Room {
   id: string
@@ -10,6 +11,7 @@ interface Room {
   maxPlayers: number
   isStarted: boolean
   isPrivate: boolean
+  disconnectedCount?: number
 }
 
 const RoomList: React.FC = () => {
@@ -17,7 +19,7 @@ const RoomList: React.FC = () => {
   const navigate = useNavigate()
   const [rooms, setRooms] = useState<Room[]>([])
   const [loading, setLoading] = useState(true)
-  const [playerName, setPlayerName] = useState('')
+  const [playerName, setPlayerName] = useState(() => loadPlayerName())
 
   useEffect(() => {
     // Fetch rooms from the API
@@ -66,6 +68,7 @@ const RoomList: React.FC = () => {
       return
     }
 
+    savePlayerName(playerName.trim())
     if (socket && isConnected) {
       socket.emit('room:join', roomId, playerName.trim())
     }
@@ -127,11 +130,12 @@ const RoomList: React.FC = () => {
         {/* Player Name Input */}
         <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 mb-6">
           <div className="flex flex-col sm:flex-row gap-4 items-center">
-            <label className="text-white font-semibold">Your Name:</label>
+            <label className="text-white font-semibold">Your name:</label>
             <input
               type="text"
               value={playerName}
               onChange={(e) => setPlayerName(e.target.value)}
+              onBlur={() => savePlayerName(playerName)}
               placeholder="Enter your name"
               className="flex-1 px-4 py-2 rounded-lg bg-white/20 text-white placeholder-gray-300 border border-white/30 focus:outline-none focus:ring-2 focus:ring-teal-400"
               maxLength={20}
@@ -186,7 +190,9 @@ const RoomList: React.FC = () => {
         {/* Instructions */}
         <div className="mt-6 text-center text-teal-200 text-sm">
           <p>💡 Tip: Enter your name above, then click "Join" on any room to start playing!</p>
-          <p className="mt-2">🎯 Try the new <strong>War</strong> game for quick 2-player battles!</p>
+          <p className="mt-2">
+            If a room looks full but someone disconnected, use the <strong>same name</strong> as before to reclaim their seat (no password).
+          </p>
         </div>
       </div>
     </div>
@@ -212,6 +218,11 @@ const RoomCard: React.FC<RoomCardProps> = ({
   canJoin
 }) => {
   const isRoomFull = room.playerCount >= room.maxPlayers
+  const dc = room.disconnectedCount ?? 0
+  const canReclaimSeat = isRoomFull && dc > 0
+  const joinEnabled = canJoin && (!isRoomFull || canReclaimSeat)
+  const blockStarted =
+    room.isStarted && isRoomFull && !canReclaimSeat
   const isWarGame = room.gameType === 'war'
 
   return (
@@ -240,6 +251,9 @@ const RoomCard: React.FC<RoomCardProps> = ({
       <div className="flex justify-between items-center mb-4">
         <div className="text-sm text-teal-200">
           Players: {room.playerCount}/{room.maxPlayers}
+          {dc > 0 && (
+            <span className="text-amber-300"> • {dc} away (reclaim with same name)</span>
+          )}
           {isWarGame && room.playerCount === 0 && (
             <span className="text-yellow-400"> • Ready to battle!</span>
           )}
@@ -252,24 +266,26 @@ const RoomCard: React.FC<RoomCardProps> = ({
 
       <button
         onClick={() => onJoin(room.id)}
-        disabled={!canJoin || isRoomFull || room.isStarted}
+        disabled={!joinEnabled || blockStarted}
         className={`w-full py-3 px-4 rounded-lg font-semibold transition-all ${
-          !canJoin || isRoomFull || room.isStarted
+          !joinEnabled || blockStarted
             ? 'bg-gray-500 text-gray-300 cursor-not-allowed'
             : isWarGame
               ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg hover:shadow-xl'
               : 'bg-teal-600 hover:bg-teal-700 text-white shadow-lg hover:shadow-xl'
         }`}
       >
-        {!canJoin 
-          ? 'Enter Name First' 
-          : isRoomFull 
-            ? 'Room Full' 
-            : room.isStarted 
-              ? 'Game Started' 
-              : isWarGame
-                ? '⚔️ Join Battle'
-                : 'Join Game'
+        {!canJoin
+          ? 'Enter name first'
+          : blockStarted
+            ? 'Game in progress'
+            : canReclaimSeat
+              ? '↩ Reclaim seat (same name)'
+              : isRoomFull
+                ? 'Room full'
+                : isWarGame
+                  ? '⚔️ Join battle'
+                  : 'Join game'
         }
       </button>
     </div>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useSocket } from '../contexts/SocketContext'
+import { loadPlayerName, savePlayerName } from '../lib/playerName'
 
 const Home: React.FC = () => {
   const { socket, isConnected, connectionError } = useSocket()
@@ -8,7 +9,7 @@ const Home: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [isCreatingRoom, setIsCreatingRoom] = useState(false)
   const [roomName, setRoomName] = useState('')
-  const [playerName, setPlayerName] = useState('')
+  const [playerName, setPlayerName] = useState(() => loadPlayerName())
   const [gameType, setGameType] = useState<'war' | 'poker' | 'blackjack' | 'hearts' | 'go-fish' | 'speed' | '304'>('war')
 
   const handleCreateRoom = async () => {
@@ -27,6 +28,7 @@ const Home: React.FC = () => {
       return
     }
 
+    savePlayerName(playerName.trim())
     setIsCreatingRoom(true)
 
     try {
@@ -182,6 +184,7 @@ const Home: React.FC = () => {
                     type="text"
                     value={playerName}
                     onChange={(e) => setPlayerName(e.target.value)}
+                    onBlur={() => savePlayerName(playerName)}
                     placeholder="Enter your name"
                     className="w-full px-4 py-2 rounded-lg bg-white/20 text-white placeholder-gray-300 border border-white/30 focus:outline-none focus:ring-2 focus:ring-teal-400"
                     maxLength={20}
@@ -222,7 +225,6 @@ const Home: React.FC = () => {
                   onClick={() => {
                     setShowCreateModal(false)
                     setRoomName('')
-                    setPlayerName('')
                   }}
                   className="flex-1 py-3 px-6 rounded-lg font-semibold bg-gray-600 hover:bg-gray-700 text-white"
                 >
